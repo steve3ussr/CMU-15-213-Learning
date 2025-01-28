@@ -1,0 +1,75 @@
+#include <stdio.h>
+int howManyBits(int x) {
+    int init = (x>>31) & 0x1;
+    int res = 1;
+    int flag = 0;
+
+    flag = flag | !(!((x>>(30)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(29)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(28)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(27)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(26)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(25)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(24)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(23)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(22)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(21)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(20)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(19)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(18)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(17)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(16)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(15)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(14)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(13)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(12)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(11)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(10)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(9)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(8)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(7)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(6)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(5)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(4)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(3)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(2)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(1)) & 0x1 ^ init ));
+    res = res+flag;
+    flag = flag | !(!((x>>(0)) & 0x1 ^ init ));
+    res = res+flag;
+    return res;
+}
+int main() {
+    int x = 0x80000000;
+    int res = howManyBits(x);
+    printf("answer is: %d. ", res);
+}

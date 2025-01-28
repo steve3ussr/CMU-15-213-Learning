@@ -1,0 +1,108 @@
+# TODO
+
+
+
+# Lab 1: DataLab
+
+## Instructions
+
+- 只需要修改`bits.c`, 其中包括13个puzzle的框架
+- 不允许使用循环, 条件等, 只能用指定的运算符, 更具体的描述见`bits.c`
+- 不允许使用超过8bits的常量
+
+## Puzzle 1: XOR
+
+只允许使用`~, &`
+
+```
+a^b = (~a)&b | a&(~b)
+~ a|b = (~a)&(~b)
+```
+
+
+
+## Puzzle 2: tmin
+
+生成1，左移
+
+## Puzzle 3: isTmax
+
+```
+Tmax+1 = Tmin
+~Tmax  = Tmin
+(~x)^x = 0
+```
+
+利用以上的性质，可判断x为Tmax或者-1
+
+通过`!(x+1)`可判断具体是哪个数
+
+## Puzzle 4: allOddBits
+
+1. 利用`0xAA`和左移生成`0xAAAAAAAA`
+2. `(x & 0xAA) ^ 0xAA=0`，说明x的奇数位全为1，否则说明x不满足条件
+
+## Puzzle 5: Negate
+
+`(~x)+1`
+
+## Puzzle 6: isAsciiDigit
+
+```
+x - 0x30 >= 0, a=(x-0x30)>>31 全0, !a为1
+x - 0x3a <  0, b=(x-0x3a)>>31 全1, !(b+1)为1
+第二条不能用0x39减, 因为0x39-0x39=0, 0>>31全0, 和第一种情况一样
+```
+
+## Puzzle 7: conditional
+
+```
+寻找f(x, y), 使得x!=0时值为y, x=0时值为0; 
+可以猜测, 很容易就有g(x, z), 使得x!=0时值为0, x=0时值为z;
+这样就能返回 f(x, y)+g(x, z), 当x!=0时值为y, x=0时值为z
+
+Sf(x) = !(!x), 当x!=0时值为1, x=0时值为0
+Sg(x) = !(x),  当x!=0时值为0, x=0时值为1
+
+Rf(x) = (~Sf(x))+1, 当x!=0时为全1 (0xff), x=0时值为全0
+Rg(x) = (~Sf(x))+1, 当x!=0时为全0, x=0时值为全1 (0xff)
+
+f(x, y) = Rf(x) & y
+g(x, z) = Rg(x) & z
+```
+
+## Puzzle 8: isLessEqual
+
+```
+f(x) = (x>>31)+1
+if x>=0: f(x)=1
+if x <0: f(x)=0 
+```
+
+## Puzzle 9: logicalNeg
+
+```
+f(x) = x ^ (~x+1)
+g(x) = (f(x)>>31) & 1, when x==0/Tmin, f(x)=0
+
+h(x) = (x>>31) & 1,    when x>=0,      g(x)=0
+
+k(x) = (1-g(x)) & (1-h(x)), when x==0, k(x)=1
+```
+
+## Puzzle 10: howManyBits
+
+问题基本等效为从头开始，寻找第一个发生变化的位置。所以可以：
+
+1. 记住第一个bit
+2. 设置一个flag，为了方便，让flag初始为0
+3. res初始值为32
+4. 从第二个bit开始遍历，直到最后一个bit，如果某个bit和第一个bit不一样，就永久地改变flag，可以用 | 运算
+5. `x>>(i-1) & 0x1`可提取第i位bit，计算``xi ^ x32`
+6. 每次比较后，res -= 1-flag，如果flag=0说明一样的，res需要-1；如果flag=1说明res不需要更改了；
+7. 解循环，最终优化后可得结果
+
+
+
+
+
