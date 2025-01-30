@@ -102,7 +102,48 @@ k(x) = (1-g(x)) & (1-h(x)), when x==0, k(x)=1
 6. 每次比较后，res -= 1-flag，如果flag=0说明一样的，res需要-1；如果flag=1说明res不需要更改了；
 7. 解循环，最终优化后可得结果
 
+## Puzzle 11: floatScale2
 
+从输入值中提取:
 
+- M: 32位, 前9位为0, 后23位为输入值
+- S: 32位, 第一位为输入值, 后31位为0
+- E: 32位, 后8位为实际的E field
 
+### case1: E field all 1
 
+此时为NaN, 直接返回输入值
+
+### case2: E field 非全0
+
+让E field+1, 重新组装
+
+### case3: E filed 全0
+
+M左移1, 前面+7个0, 加sign bit
+
+## Puzzle 12: floatFloat2Int
+
+从输入值中提取:
+
+- M: 32位, 前9位为0, 后23位为输入值
+- S: 32位, 第一位为输入值, 后31位为0
+- E: 32位, 后8位为实际的E field
+
+### case1: E field all 1
+
+此时为NaN, 直接返回0x80000000
+
+### case2: E field 非全0
+
+计算exponent，为E-127
+
+M左移exponent-23
+
+加sign bit
+
+### case3: E filed 全0
+
+肯定是0.几, 至于该变成0还是变成1这个还不清楚.
+
+加sign bit
