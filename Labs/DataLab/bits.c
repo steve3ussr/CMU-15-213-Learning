@@ -390,14 +390,13 @@ int floatFloat2Int(unsigned uf) {
     int m = uf & ~((0xff<<24) + (0x1<<23));
     unsigned int s = uf & (0x1<<31);
     unsigned int e = (uf>>23) & 0xff;
-
-    if (!(e^0xff)) return 0x80000000;
-    if (!(e)) return 0;
-
     // int expo = e-127; //e[1, 254], expo[-126, 127]
     // int sh = expo-23;  // sh>=0, shl; sh<0, shr
     int sh_num = e+1+(~150);
     m = m+(0x1<<23);
+
+    if (!(e^0xff)) return 0x80000000;
+    if (!(e)) return 0;
 
     if (!(sh_num>>31)) {   // if sh>=0
         if (sh_num>>5) return 0x80000000;
