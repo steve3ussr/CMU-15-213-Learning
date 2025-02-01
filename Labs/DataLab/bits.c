@@ -236,17 +236,20 @@ int isLessOrEqual(int x, int y) {
     int flag_x_eq_Tmin = !(x^(0x1<<31));
     int flag_x_eq_y = !(x^y);
 
+    int flag_x_g0 = !((x1>>31)&1) & !(!x1);
+    int flag_y_g0 = !((y>>31)&1) & !(!y);
+    int flag_d_le_0 = ((delta>>31)&1);
     // x>0 && y>0 && s<=0
-    int of_pos = !((x1>>31)&1) & !(!x1) & !((y>>31)&1) & !(!y) & ((delta>>31)&1);
-    // x<0 && y<0 && s?=0
-    int of_neg = ((x1>>31)&1) & ((y>>31)&1) & !((delta>>31)&1) & !(!delta);
+    int of_pos = flag_x_g0 & flag_y_g0 & flag_d_le_0;
+    // x<0 && y<0 && s>=0
+    int not_of_neg = flag_x_g0 | flag_y_g0 | flag_d_le_0;
     // res >= 0
-    int res = !((delta>>31)&1);
+    int res = !flag_d_le_0;
 
     // if (of_pos): res=1;
     res = res | of_pos;
     // if (of_neg): res=0;
-    res = res & (!of_neg);
+    res = res & not_of_neg;
 
     // if x==Tmin, return 1;
     // if x==y, return 1;
