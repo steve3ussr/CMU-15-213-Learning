@@ -282,40 +282,44 @@ int logicalNeg(int x) {
  *  Rating: 4
  */
 int howManyBits(int x) {
-    int y = x ^ (x>>31);
-    int res = 63;
-    res = res +~ !(y>>30);
-    res = res +~ !(y>>29);
-    res = res +~ !(y>>28);
-    res = res +~ !(y>>27);
-    res = res +~ !(y>>26);
-    res = res +~ !(y>>25);
-    res = res +~ !(y>>24);
-    res = res +~ !(y>>23);
-    res = res +~ !(y>>22);
-    res = res +~ !(y>>21);
-    res = res +~ !(y>>20);
-    res = res +~ !(y>>19);
-    res = res +~ !(y>>18);
-    res = res +~ !(y>>17);
-    res = res +~ !(y>>16);
-    res = res +~ !(y>>15);
-    res = res +~ !(y>>14);
-    res = res +~ !(y>>13);
-    res = res +~ !(y>>12);
-    res = res +~ !(y>>11);
-    res = res +~ !(y>>10);
-    res = res +~ !(y>>9);
-    res = res +~ !(y>>8);
-    res = res +~ !(y>>7);
-    res = res +~ !(y>>6);
-    res = res +~ !(y>>5);
-    res = res +~ !(y>>4);
-    res = res +~ !(y>>3);
-    res = res +~ !(y>>2);
-    res = res +~ !(y>>1);
-    res = res +~ !(y);
-    return res;
+    int y32 = x ^ (x>>31);
+    int res=1;
+
+    int y32f = y32>>16;
+    int y32r = y32 & (0xff + (0xff<<8));
+    int c32 = !(!(y32f));
+    int res32 = res + (c32<<4);
+    int y16_2 = y32r & (1+~(!c32));
+    int y16_1 = (~c32+1) & y32f;
+
+    int y16 = y16_1 + y16_2;
+
+    int y16f = y16>>8;
+    int y16r = y16 & 0xff;
+    int c16 = !(!y16f);
+    int res16 = res32 + (c16<<3);
+    int y8 = (y16f & (1+~c16))+(y16r & (1+~!c16));
+
+    int y8f = y8>>4;
+    int y8r = y8 & 0x0f;
+    int c8 = !(!y8f);
+    int res8 = res16 + (c8<<2);
+    int y4 = (y8f & (1+~c8))+(y8r & (1+~!c8));
+
+    int y4f = y4>>2;
+    int y4r = y4 & 0x03;
+    int c4 = !(!y4f);
+    int res4 = res8 + (c4<<1);
+    int y2 = (y4f & (1+~c4))+(y4r & (1+~!c4));
+
+    int y2f = y2>>1;
+    int y2r = y2 & 0x01;
+    int c2 = !(!y2f);
+    int res2 = res4 + c2;
+    int y1 = (y2f & (1+~c2))+(y2r & (1+~!c2));
+
+    int res1 = res2+y1;
+    return res1;
 }
 //float
 /* 
