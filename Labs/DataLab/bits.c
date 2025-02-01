@@ -234,17 +234,16 @@ int isLessOrEqual(int x, int y) {
     int x1 = ~x+1;
     int delta = y+x1;
     int flag_x_eq_Tmin = !(x^(0x1<<31));
-    int flag_x_eq_y = !(x^y);
 
-    int flag_x_g0 = !((x1>>31)&1) & !(!x1);
-    int flag_y_g0 = !((y>>31)&1) & !(!y);
-    int flag_d_le_0 = ((delta>>31)&1);
-    // x>0 && y>0 && s<=0
-    int of_pos = flag_x_g0 & flag_y_g0 & flag_d_le_0;
+    int flag_x_ge0 = !((x1>>31)&1);
+    int flag_y_ge0 = !((y>>31)&1);
+    int flag_d_l0 = (delta>>31)&1;
+    // x>00 && y>=0 && s<0
+    int of_pos = flag_x_ge0 & flag_y_ge0 & flag_d_l0;
     // x<0 && y<0 && s>=0
-    int not_of_neg = flag_x_g0 | flag_y_g0 | flag_d_le_0;
+    int not_of_neg = flag_x_ge0 | flag_y_ge0 | flag_d_l0;
     // res >= 0
-    int res = !flag_d_le_0;
+    int res = !flag_d_l0;
 
     // if (of_pos): res=1;
     res = res | of_pos;
@@ -252,8 +251,7 @@ int isLessOrEqual(int x, int y) {
     res = res & not_of_neg;
 
     // if x==Tmin, return 1;
-    // if x==y, return 1;
-    return flag_x_eq_Tmin | flag_x_eq_y | res;
+    return flag_x_eq_Tmin | res;
 }
 //4
 /* 
@@ -396,15 +394,17 @@ int floatFloat2Int(unsigned uf) {
     if (!(e^0xff)) return 0x80000000;
     if (!(e)) return 0;
 
-    int expo = e-127; //e[1, 254], expo[-126, 127]
+    // int expo = e-127; //e[1, 254], expo[-126, 127]
+    // int sh = expo-23;  // sh>=0, shl; sh<0, shr
+    int sh_num = e+1+(~150);
     m = m+(0x1<<23);
-    int sh = expo-23;  // sh>=0, shl; sh<0, shr
-    if (!(sh>>31)) {   // if sh>=0
-        if (sh>>5) return 0x80000000;
-        m = m<<sh;
+
+    if (!(sh_num>>31)) {   // if sh>=0
+        if (sh_num>>5) return 0x80000000;
+        m = m<<sh_num;
     }
     else {
-        int sh_neg = ~sh+1;
+        int sh_neg = ~sh_num+1;
         if (sh_neg>>5) return 0;
         m = m>>(sh_neg);
     }
