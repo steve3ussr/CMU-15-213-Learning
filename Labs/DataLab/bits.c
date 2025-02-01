@@ -169,7 +169,7 @@ int tmin(void) {
  */
 int isTmax(int x) {
   int possible = !((x+1) ^ (~x));
-  int not_neg1 = x+1;  // !(!( x+1 ))
+  int not_neg1 = !(!(x+1));  // !(!( x+1 ))
   return possible & not_neg1;
 }
 /* 
@@ -221,7 +221,7 @@ int isAsciiDigit(int x) {
 int conditional(int x, int y, int z) {
   int mask_y = 1 + ~(!(!x));
   int mask_z = 1 + ~(!x);
-  return mask_y&y + mask_z&z;
+  return (mask_y&y) + (mask_z&z);
 }
 /* 
  * isLessOrEqual - if x <= y  then return 1, else return 0 
@@ -231,8 +231,26 @@ int conditional(int x, int y, int z) {
  *   Rating: 3
  */
 int isLessOrEqual(int x, int y) {
-  int delta = y-x;
-  return (delta>>31)+1;
+    int x1 = ~x+1;
+    int delta = y+x1;
+    int flag_x_eq_Tmin = !(x^(0x1<<31));
+    int flag_x_eq_y = !(x^y);
+
+    // x>0 && y>0 && s<=0
+    int of_pos = !((x1>>31)&1) & !(!x1) & !((y>>31)&1) & !(!y) & ((delta>>31)&1);
+    // x<0 && y<0 && s?=0
+    int of_neg = ((x1>>31)&1) & ((y>>31)&1) & !((delta>>31)&1) & !(!delta);
+    // res >= 0
+    int res = !((delta>>31)&1);
+
+    // if (of_pos): res=1;
+    res = res | of_pos;
+    // if (of_neg): res=0;
+    res = res & (!of_neg);
+
+    // if x==Tmin, return 1;
+    // if x==y, return 1;
+    return flag_x_eq_Tmin | flag_x_eq_y | res;
 }
 //4
 /* 
@@ -267,67 +285,67 @@ int howManyBits(int x) {
   int res = 1;
   int flag = 0;
 
-    flag = flag | !(!((x>>(30)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(30)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(29)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(29)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(28)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(28)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(27)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(27)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(26)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(26)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(25)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(25)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(24)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(24)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(23)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(23)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(22)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(22)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(21)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(21)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(20)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(20)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(19)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(19)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(18)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(18)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(17)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(17)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(16)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(16)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(15)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(15)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(14)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(14)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(13)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(13)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(12)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(12)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(11)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(11)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(10)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(10)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(9)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(9)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(8)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(8)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(7)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(7)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(6)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(6)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(5)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(5)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(4)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(4)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(3)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(3)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(2)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(2)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(1)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(1)) & 0x1) ^ init ));
     res = res+flag;
-    flag = flag | !(!((x>>(0)) & 0x1 ^ init ));
+    flag = flag | !(!(((x>>(0)) & 0x1) ^ init ));
     res = res+flag;
     return res;
 }
@@ -376,14 +394,17 @@ int floatFloat2Int(unsigned uf) {
     if (!(e)) return 0;
 
     int expo = e-127; //e[1, 254], expo[-126, 127]
-    if (expo>>31) {
-        m = m>>(~expo+1-23);
+    m = m+(0x1<<23);
+    int sh = expo-23;  // sh>=0, shl; sh<0, shr
+    if (!(sh>>31)) {   // if sh>=0
+        if (sh>>5) return 0x80000000;
+        m = m<<sh;
     }
     else {
-        m = m<<(expo-23);
+        int sh_neg = ~sh+1;
+        if (sh_neg>>5) return 0;
+        m = m>>(sh_neg);
     }
-
-    m = m & ((0x7f<<24) + (0xff<<16) + (0xff<<8));
     if (s) {return ~m+1;}
     else {return m;}
 }
@@ -401,5 +422,16 @@ int floatFloat2Int(unsigned uf) {
  *   Rating: 4
  */
 unsigned floatPower2(int x) {
-    return 2;
+    if (!(x>>31)) {// x>=0
+        // if x>127
+        if (x>>7) return (0x7f<<24) + (0x80<<16);
+        x = (x&0x7f) + 127;
+    }
+    else {
+        x = x+126;
+        // x+126<0, x<-126
+        if (x>>31) return 0;
+        x = x+1;
+    }
+    return (x&0xff)<<23;
 }
