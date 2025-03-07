@@ -1,0 +1,51 @@
+                            | # start at 0x0
+0x000:                      |     .pos 0
+0x000: 30f40002000000000000 |     irmovq stack, %rsp  # i don't think this func will  operate sp
+0x00a: 805800000000000000   |     call main
+0x013: 00                   |     halt
+                            | 
+                            | # data
+0x018:                      |     .align 8
+0x018:                      |     src:
+0x018: 0a00000000000000     |         .quad 0x000a
+0x020: b000000000000000     |         .quad 0x00b0
+0x028: 000c000000000000     |         .quad 0x0c00
+0x030: 00d0000000000000     |         .quad 0xd000
+                            | 
+0x038:                      |     dst:
+0x038: 1101000000000000     |         .quad 0x111
+0x040: 2202000000000000     |         .quad 0x222
+0x048: 3303000000000000     |         .quad 0x333
+0x050: 4404000000000000     |         .quad 0x444
+                            | 
+0x058:                      | main:    
+0x058: 30f71800000000000000 |     irmovq  src,%rdi
+0x062: 30f63800000000000000 |     irmovq  dst,%rsi
+0x06c: 30f20400000000000000 |     irmovq  $4, %rdx  # length!
+0x076: 808000000000000000   |     call copy_block
+0x07f: 90                   |     ret
+                            | 
+0x080:                      | copy_block:
+                            | 
+0x080: 6311                 | 	xorq	%rcx, %rcx  # rcx=0
+0x082: 70bb00000000000000   | 	jmp	L12
+                            | 
+0x08b:                      | L13:
+0x08b: 50070000000000000000 | 	mrmovq	(%rdi), %rax
+0x095: 40060000000000000000 | 	rmmovq	%rax, (%rsi)
+0x09f: 6301                 | 	xorq	%rax, %rcx
+0x0a1: 30fa0100000000000000 |     irmovq  $1, %r10
+0x0ab: 61a2                 | 	subq	%r10, %rdx  # rdx -= 1
+                            | 
+0x0ad: 30fa0800000000000000 |     irmovq  $8, %r10
+0x0b7: 60a6                 | 	addq	%r10, %rsi
+0x0b9: 60a7                 | 	addq	%r10, %rdi
+0x0bb:                      | L12:
+0x0bb: 63bb                 |     xorq    %r11,%r11  # r11=0
+0x0bd: 61b2                 | 	subq	%r11, %rdx  # test rdx
+0x0bf: 768b00000000000000   | 	jg	L13
+0x0c8: 2010                 | 	rrmovq	%rcx, %rax
+0x0ca: 90                   | 	ret
+                            | 
+0x200:                      |     .pos 0x200
+0x200:                      | stack:

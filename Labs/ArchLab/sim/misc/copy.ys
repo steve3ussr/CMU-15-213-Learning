@@ -1,0 +1,51 @@
+# start at 0x0
+    .pos 0
+    irmovq stack, %rsp  # i don't think this func will  operate sp
+    call main
+    halt
+
+# data
+    .align 8
+    src:
+        .quad 0x000a
+        .quad 0x00b0
+        .quad 0x0c00
+        .quad 0xd000
+
+    dst:
+        .quad 0x111
+        .quad 0x222
+        .quad 0x333
+        .quad 0x444
+
+main:    
+    irmovq  src,%rdi
+    irmovq  dst,%rsi
+    irmovq  $4, %rdx  # length!
+    call copy_block
+    ret
+
+copy_block:
+
+	xorq	%rcx, %rcx  # rcx=0
+	jmp	L12
+
+L13:
+	mrmovq	(%rdi), %rax
+	rmmovq	%rax, (%rsi)
+	xorq	%rax, %rcx
+    irmovq  $1, %r10
+	subq	%r10, %rdx  # rdx -= 1
+
+    irmovq  $8, %r10
+	addq	%r10, %rsi
+	addq	%r10, %rdi
+L12:
+    xorq    %r11,%r11  # r11=0
+	subq	%r11, %rdx  # test rdx
+	jg	L13
+	rrmovq	%rcx, %rax
+	ret
+
+    .pos 0x200
+stack:

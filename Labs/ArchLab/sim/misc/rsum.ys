@@ -1,0 +1,48 @@
+# start at 0x0
+    .pos 0
+    irmovq stack, %rsp  # i don't think this func will  operate sp
+    call main
+    halt
+
+# data
+    .align 8
+    ele1:
+        .quad 0x00a
+        .quad ele2
+    ele2:
+        .quad 0x0b0
+        .quad ele3
+    ele3:
+        .quad 0xc00
+        .quad ele4
+    ele4:
+        .quad 0xd000
+        .quad 0
+
+main:
+    irmovq  ele1,%rdi
+    call rsum_list
+    ret
+
+# # rax, rdi, r10, r11
+rsum_list:
+    xorq    %rax,%rax
+    xorq    %r10,%r10  # r10=0
+	subq	%r10, %rdi  # loop end while ptr==0
+	je	L6
+
+	pushq	%r12
+	mrmovq	(%rdi), %r12
+	mrmovq	8(%rdi), %rdi
+	call	rsum_list
+	addq	%r12, %rax
+	popq	%r12
+	ret
+
+L6:
+    xorq    %r10,%r10  # r10=0
+	rrmovq	%r10, %rax  # return 0
+	ret
+
+    .pos 0x200
+stack:
