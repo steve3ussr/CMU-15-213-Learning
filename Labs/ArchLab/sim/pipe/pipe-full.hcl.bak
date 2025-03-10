@@ -265,10 +265,7 @@ bool set_cc = E_icode == IOPQ &&
 	!m_stat in { SADR, SINS, SHLT } && !W_stat in { SADR, SINS, SHLT };
 
 ## Generate valA in execute stage
-word e_valA = [
-(M_icode==IMRMOVQ && E_icode==IRMMOVQ && e_srcA==m_dstM) : m_valM;
-1 : E_valA;  # Use valA from stage pipe register
-];
+word e_valA = E_valA;    # Pass valA through stage
 
 ## Set dstE to RNONE in event of not-taken conditional move
 word e_dstE = [
