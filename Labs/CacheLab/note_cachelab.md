@@ -26,36 +26,6 @@
 - 模拟cache的行为
 - 返回hit，miss，eviction（替换掉某个line）的次数
 
-## Cheat
-
-```
-gcc -O2 ./cachelab.c ./csim.c -o ./csim
-
-./csim -v -s 1 -E 1 -b 1 -t traces/yi2.trace;
-./csim-ref -v -s 1 -E 1 -b 1 -t traces/yi2.trace;
-./csim -v -s 4 -E 2 -b 4 -t traces/yi.trace;
-./csim-ref -v -s 4 -E 2 -b 4 -t traces/yi.trace;
-./csim -v -s 2 -E 1 -b 4 -t traces/dave.trace;
-./csim-ref -v -s 2 -E 1 -b 4 -t traces/dave.trace;
-./csim -v -s 5 -E 1 -b 5 -t traces/long.trace;
-./csim-ref -v -s 5 -E 1 -b 5 -t traces/long.trace;
-
-
-./csim -v -s 2 -E 1 -b 3 -t traces/trans.trace;
-./csim-ref -v -s 2 -E 1 -b 3 -t traces/trans.trace;
-
-./csim -v -s 2 -E 2 -b 3 -t traces/trans.trace;
-./csim-ref -v -s 2 -E 2 -b 3 -t traces/trans.trace; 
-
-./csim -v -s 2 -E 4 -b 3 -t traces/trans.trace;
-./csim-ref -v -s 2 -E 4 -b 3 -t traces/trans.trace;
-
-./csim -v -s 5 -E 1 -b 5 -t traces/trans.trace;
-./csim-ref -v -s 5 -E 1 -b 5 -t traces/trans.trace;
-```
-
-
-
 ## Ref
 
 - `csim-ref -v -s ? -E ? -b ? -t <file>`
@@ -64,7 +34,11 @@ gcc -O2 ./cachelab.c ./csim.c -o ./csim
 ## Rules
 
 - 只关注Data Cache, 忽略Instruction Cache
-- 
+- 所有的指令行都是第一个字符为I, 所有的数据行都是第一个字符为空格, 第二个为L/S/M
+- 如果是M, 那意味着先L后M
+- L和M对cache的影响没有区别, 每次访问几个byte也没区别
+- 有些内存不是64 bit int, 而是72 bit, 7开头; 这种内存地址我直接取后面的64位, 没啥问题
+- 题目中没有内存访问超过block的情况
 
 ## Example
 
@@ -80,23 +54,15 @@ gcc -O2 ./cachelab.c ./csim.c -o ./csim
 ## Method
 
 - t - s - b
-- S是一个对象, 通过s来区分
-- S里包含若干个line, S对象里有LRU方法
-- 每个line中有tag和block
-- 
-  1. set内的LRU使用双向链表实现，每个节点代表一个line
-  2. load时，遍历set内的node，如果
-     1. hit：取出节点，放到末尾，HIT
-     2. miss，长度未达上限：加到末尾，MISS
-     3. miss，长度已达上限：pop head，新的内容加到末尾，MISS EVICT
-  3. store时一样
-  4. 数据结构：
-     1. LineNode代表一个line 节点，由v，tag组成
-     2. Set：len，dumb head，dumb tail
-     3. cache：Set array
-  5. 细节：
-     1. 一次访问应该不止访问一个block，如果越界需要做处理
-     2. 需要free内存，因为new需要malloc
+- cache是一个array of Set
+- Set是一个对象包含若干个line, 通过双向链表实现LRU
+- 每个line中有tag, v, 还有前后节点
+- access时，遍历set内的node，如果
+  - hit：取出节点，放到末尾，HIT
+  - miss，长度未达上限：加到末尾,长度+1，MISS
+  - miss，长度已达上限：pop head，新的内容加到末尾，MISS EVICT
+  - **需要free内存!**
+
 
 
 
