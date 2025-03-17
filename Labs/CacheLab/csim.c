@@ -103,9 +103,7 @@ int main(int argc, char *argv[])
 
     // Part 1: load args
     int index_arg = 1;
-    if (argc == 10){
-        // TODO: handle verbose
-        char *verbose = argv[index_arg++];}
+  
 
     // if res==1, all args matched
     int res = strcmp(argv[index_arg], "-s")==0 &&
@@ -121,7 +119,7 @@ int main(int argc, char *argv[])
 
 
     // Part 2: load file, get line nums -> ENTRY_LENGTH
-    char string[31]; // 31 is buffer size
+    char string[100]; // 31 is buffer size
     FILE* file = fopen(t, "r");
     if (file == NULL) {
         fprintf(stderr, "can't open %s: %s\n", t, strerror(errno));
@@ -160,7 +158,7 @@ int main(int argc, char *argv[])
     // Part 5: prepare mask
     uint mask_b = (1<<b)-1;
     uint mask_s = ((1<<(s+b))-1) ^ mask_b;
-    uint mask_t = ((1<<(64))-1) ^ mask_s ^ mask_b;
+    uint mask_t = 0xffffffff ^ mask_s ^ mask_b;
 
 
     // Part 6: exec for each entry, record
@@ -180,9 +178,9 @@ int main(int argc, char *argv[])
             res = TraverseList(cache[addr_s], addr_t, 0);
             if (argc == 10) {
                 switch (res) {
-                case 1: printf("\thit", res); hit += 1; break;
-                case 2: printf("\tmiss", res); miss += 1; break;
-                case 3: printf("\tmiss eviction", res);miss += 1; eviction += 1; break;}}
+                case 1: printf("\thit"); hit += 1; break;
+                case 2: printf("\tmiss"); miss += 1; break;
+                case 3: printf("\tmiss eviction");miss += 1; eviction += 1; break;}}
             else {
                 switch (res) {
                 case 1: hit += 1; break;
@@ -194,9 +192,9 @@ int main(int argc, char *argv[])
         res = TraverseList(cache[addr_s], addr_t, 0);
         if (argc == 10) {
             switch (res) {
-                case 1: printf("\thit\n", res); hit += 1; break;
-                case 2: printf("\tmiss\n", res); miss += 1; break;
-                case 3: printf("\tmiss eviction\n", res);miss += 1; eviction += 1; break;}}
+                case 1: printf("\thit\n"); hit += 1; break;
+                case 2: printf("\tmiss\n"); miss += 1; break;
+                case 3: printf("\tmiss eviction\n");miss += 1; eviction += 1; break;}}
         else {
             switch (res) {
                 case 1: hit += 1; break;
