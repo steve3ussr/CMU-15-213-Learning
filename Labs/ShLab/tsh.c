@@ -280,7 +280,7 @@ int builtin_cmd(char **argv)
  * do_bgfg - Execute the builtin bg and fg commands
  */
 void do_bgfg(char **argv) 
-{   return;
+{
     /* 
     * Jobs states: FG (foreground), BG (background), ST (stopped)
     * Job state transitions and enabling actions:
@@ -290,21 +290,38 @@ void do_bgfg(char **argv)
     *     BG -> FG  : fg command
     * At most 1 job can be in the FG state.
     */
-    int oldeerrno = errno;
-    int is_job = strcmp(argv[1], "&") == 0 ? 1 : 0; 
-    struct job_t * target = is_job ? getjobjid(jobs, atoi(argv[2])) : getjobpid(jobs, atoi(argv[1]));
-    int id = is_job ? -target->pid : target->pid; 
-    int state;
 
-    if (strcmp(argv[0], "bg")){
+    int oldeerrno = errno;
+
+    // process input
+    if (argv[1] == NULL) {printf("you idiot should input a pid/jid!\n"); return;}
+    int is_job = argv[1][0] == '%' ? 1 : 0;
+    int id_input;
+
+    if (sscanf(&argv[1][is_job], "%d", &id_input) <= 0){
+        printf("not an integer\n");
+        return;} 
+    
+    struct job_t * target = is_job ? getjobjid(jobs, id_input) : getjobpid(jobs, id_input);
+    if (target == NULL){printf("id not found\n"); return;}
+    int id = is_job ? -target->pid : target->pid; 
+    printf("log: id: %d\n", id);
+
+    int state;
+    if (strcmp(argv[0], "bg")==0){
         target->state = BG;
+        printf("log: BG, sending SIGCONT to %d\n", id);
         state = kill(id, SIGCONT);
+        
         if (state != 0){
             unix_error("error when do bg cmd");
             printf("fg %s, error state %d\n", argv[1], state);
         }
+        else{
+            printf("[%d] (%d) %s", target->jid, target->pid, target->cmdline);
+        }
     };
-    if (strcmp(argv[0], "fg")){
+    if (strcmp(argv[0], "fg")==0){
         target->state = FG;
         state = kill(id, SIGCONT);
         if (state != 0){
@@ -411,7 +428,7 @@ void sigtstp_handler(int sig)
     sigprocmask(SIG_BLOCK, &mask_all, &prev);
     
     if ((fgid = fgpid(jobs)) > 0){
-        printf("sigtstp hdl a pid: %d\n", fgid);
+        // printf("sigtstp hdl a pid: %d\n", fgid);
         sigprocmask(SIG_SETMASK, &prev, NULL);
 
         status = kill(-fgid, SIGTSTP);
@@ -509,7 +526,7 @@ pid_t fgpid(struct job_t *jobs) {
 
     for (i = 0; i < MAXJOBS; i++){
 	if (jobs[i].state == FG){
-        printf("find a fgpid: %d\n", jobs[i].pid);
+        // printf("find a fgpid: %d\n", jobs[i].pid);
 	    return jobs[i].pid;}}
     return 0;
 }
