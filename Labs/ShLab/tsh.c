@@ -180,6 +180,7 @@ void eval(char *cmdline)
         if((pid = fork()) == 0){
             // a child
             sigprocmask(SIG_SETMASK, &prev, NULL);
+            setpgid(0, 0);
             if (execve(argv[0], argv, environ)<0){
                 printf("Bad Command: %s\n", argv[0]);
                 exit(0);
@@ -388,7 +389,7 @@ void sigint_handler(int sig)
     
     if ((fgid = fgpid(jobs)) > 0){
         sigprocmask(SIG_SETMASK, &prev, NULL);
-        status = kill(fgid, SIGINT);
+        status = kill(-fgid, SIGINT);
         if(status != 0) unix_error("error when sigint");
     }
     errno = olderrno;
@@ -413,7 +414,7 @@ void sigtstp_handler(int sig)
         printf("sigtstp hdl a pid: %d\n", fgid);
         sigprocmask(SIG_SETMASK, &prev, NULL);
 
-        status = kill(fgid, SIGTSTP);
+        status = kill(-fgid, SIGTSTP);
         if(status != 0) unix_error("error when sigtstp");
     }
     else{
