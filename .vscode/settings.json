@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "*.m": "matlab",
+        "*.catvbs": "vbs",
+        "wait.h": "c"
+    }
+}

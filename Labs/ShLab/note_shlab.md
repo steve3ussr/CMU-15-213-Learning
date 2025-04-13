@@ -24,41 +24,16 @@
 
 `sigprocmask`系列用于显式地设置ctx中的block bit
 
-`SIGCHLD`当子进程结束时, 会给父进程发送这个信号
+`SIGCHLD`当子进程结束/被stop时, 会给父进程发送这个信号
 
-## Todo
-
-- [ ] builtin cmd中kill如何操作
-- [ ] wait_fg中, 对SIGCHLD的处理是否正确? 是否会导致竞争?
-- [ ] sigint_hdl发送SIGTERM这对吗? 
-- [ ] do_bgfg指的是操作一个进程组还是什么? 如果是进程组的话是否需要对每个pid都处理
-- [ ] setpgid是在哪里用上的...我怎么不知道...
-- [ ] chld_hdl为什么要block信号？
-- [ ] chld_hdl为什么waitpid要用option
-- [ ] 
+`pause()`时收到一个信号就会恢复
 
 
 
-## Arch
+## Helper Routings
 
 - job_t 定义了pid, jid, state (UNDEF, BG, FG, ST), 记录cmdline
 - nextjid, 从1递增
-- **eval**: 
-  - 执行每个cmd
-  - 如果是子进程, 就fork并且执行
-  - 在父进程中addjobs
-  - 如果是builtin, 就直接执行
-  - 如果是fg, 就等待fg结束
-- **_builtin cmd**: 执行内置命令
-- **_do_bgfg**:
-  - `bg &5`代表jid, `bg 5`代表pid
-  - fg, 发送SIGCONT, 等待进程完成
-  - bg: ST -> BG, 发送SIGCONT
-
-- **_waitfg**: 等待前台进程结束
-- **sigchld_hdl**: deletejob
-- **_sigtstp_hdl**: ctrl+Z, FG -> ST
-- **_sigint_hdl**: ctrl+C, 结束fgjob
 - parseline:
   - 解析cmdline, 将结果填入argv
   - 如果cmd为空, 返回1
@@ -76,45 +51,48 @@
 - pid2jid: 找到了就返回jid，否则返回0
 - listjobs: show jobs
 
+## Self-Finished Routings
 
+### eval
 
-## Traces
+- 创建子进程前阻塞CHLD, 父进程中在addjob后恢复, 子进程中立即恢复
+- 修改全局变量前阻塞所有信号
+- 创建子进程后set group id
+- waitfg中前不解除对CHLD的阻塞
 
-### 01
+### builtin cmd
 
-能编译成功就行, 没有要求
+很简单, 没什么可说的
 
-### 02
+### do_bgfg
 
-抄书上的`eval`函数实现, 并且能匹配`builtin_cmd`就行, 重点是匹配`exit`
-
-### 03
-
-要求运行一个外部的fg, 02也可以实现
-
-### 04
-
-要求运行一个外部的bg, 需要做一些改进.
-
-问题在于`main`函数, 检测到EOF就会直接exit; 但我们希望exit前await所有的bg jobs结束. 
-
-`WNOHANG | WUNTRACED`立即返回，如果等待集合中的子进程都没有被停止或终止，则返回值为0; 如果有一个停止或终止，则返回值为该子进程的PID 。可以利用这一点, 在退出前循环检查jobs中是否有剩余的job. 
-
-为了完成这一点, 需要:
-
-1. 在eval中addjobs, 加上state
-2. 改变main中EOF之后的行为, 检查是否有剩余的任务, 如果有的话就
-   1. wait一轮
-   2. 打印出wait一轮中结束的子进程的信息
-   3. 等待1秒 (让出控制权)
-3. 在addjobs中+job数量, 在del中-job数量
-4. **有可能在addjobs之前就已经delete, 所以需要“加锁”, 在addjobs前阻塞SIGCHLD**
-5. deletejobs如果成功delete会返回1, 如果没找到对应的jobs信息就会返回0
-6. 修改SIGCHLD handler, 如果触发了就会尝试回收尽可能多的子进程, 并且deletejobs
+- 解析命令行, 考虑以下情况: 没输入id, 输入的不是id, 输入的id不存在
+- 不管bgfg, 都发送SIGCONT
+- 如果是fg就等待完成
 
 
 
+### waitfg
+
+> explicitly等待一个信号
+
+- 加上对SIGCHLD的block也没问题, 可以保证while循环前这个信号是被阻塞的; 在调用前 (在eval中调用)阻塞SIGCHLD
+- `sigsuspend`暂时解锁所有信号 (因为前台进程可能收到各种信号), pause, 因为一个信号而恢复, 恢复原有的block vector
+- **这个函数有缺陷, 没有检测是否同时存在多个前台进程; 不过按照逻辑, 同一时刻也不会出现多个前台进程**
+
+### sigchld_hdl
+
+- 回收子进程
+- waitpid中加入WNOHANG: 不加的话就会一直阻塞父进程, 直至有子进程终止, 这样很浪费时间; 
+- waitpid中加入WUNTRACED: 
+  - 除了TERM, 还能看到STOPPED; 
+  - 一个子进程可以给他自己发送SIGSTOP/SIGTSTP, shell应该发现这点, 并且在父进程的jobs中设置状态为ST; 如果一个前台进程给自己发送了STOP, 但是没有被父进程捕捉, 就会一直卡在waitfg; 所以必须要加这个option
+  - 如果一个子进程被stopped了, 也会给父进程发SIGCHLD
+- deletejob前必须阻塞所有的信号, 结束后恢复
 
 
 
+### sigtstp_hdl, sigint_hdl
 
+- 只发送给前台进程
+- 没必要阻塞信号, waitfg中阻塞信号是因为pause()可能一直阻塞, 而kill一个不存在的进程只会返回错误码

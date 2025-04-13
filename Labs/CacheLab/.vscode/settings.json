@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "*.m": "matlab",
+        "*.catvbs": "vbs",
+        "cachelab.h": "c"
+    }
+}
