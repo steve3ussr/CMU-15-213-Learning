@@ -1,13 +1,27 @@
 # Malloc Lab
 
-## Intro
+## Target
 
 - 只修改mm.c, 实现`malloc, free, realloc`
 - eval by `mdriver.c`
 
 ## Working On
 
-### Self
+### memlib.c
+
+学生将使用这个库里的函数, 而不是系统调用
+
+- mem_init: 申请20MB的堆内存 (根据config.h)
+- mem_deinit: 释放这些内存
+- mem_reset_brk: 重置brk指针位置为堆的初始位置
+- mem_sbrk: 增长一些内存, 前提是不超过20MB的限制
+- mem_heap_lo, mem_heap_hi: 实际使用的堆内存上下限
+- mem_heapsize: 实际使用的堆内存大小
+- mem_pagesize: 返回系统的pagesize
+
+### mm.c
+
+核心文件
 
 - `mm_init`用于初始化 heap, 如果有问题就返回-1, 否则返回0
 - `mm_malloc(size_t size)`返回一个指针 (指向payload), malloc不应超出heap, 也不应该和已经分配的blocks overlap; **8 bytes对齐 (为了提高内存访问效率, 64位机器内存都是8B对齐的)**
@@ -24,17 +38,7 @@
   - 是否有allocated blocks overlap
   - heap block是否指向有效的heap address
 
----
 
-### Helper
-
-memlib.c中包含了若干有用的工具
-
-- mem_sbrk: 增长堆, 返回新申请的区域开头的指针, 只接受正整数
-- mem_heap_lo: 返回堆的开头指针
-- mem_heap_hi: 返回堆的末尾指针
-- mem_heapsize: 返回heap size
-- mem_pagesize: 返回系统page size
 
 
 
