@@ -323,17 +323,52 @@ void *mm_realloc(void *bp, size_t req_size)
 
     // malloc, memcpy, free
     if (req_size_aligned > curr_size)
-    {
-        // copySize = *(size_t *)((char *)oldbp - SIZE_T_SIZE);
-        copySize = GET_SIZE(HDRP(oldbp)) - DSIZE;
-        newbp = mm_malloc(req_size);
-        memcpy(newbp, oldbp, copySize);
-        mm_free(oldbp);
-        #ifdef DEBUG
-            printf("DEBUG [mm_realloc-malloc-free]: copy size %d from %p to %p\n", copySize, oldbp, newbp);
-            show_list();
-        #endif
-        return newbp;
+    {   
+        int overall_size = curr_size + GET_BLK_SIZE(NEXT_BLKP(bp));
+        int next_blk_size = overall_size - req_size_aligned;
+
+        if (GET_BLK_ALLOC(NEXT_BLKP(bp)) || next_blk_size<0)
+        {
+            // copySize = *(size_t *)((char *)oldbp - SIZE_T_SIZE);
+            copySize = GET_SIZE(HDRP(oldbp)) - DSIZE;
+            newbp = mm_malloc(req_size);
+            memcpy(newbp, oldbp, copySize);
+            mm_free(oldbp);
+            #ifdef DEBUG
+                printf("DEBUG [mm_realloc-malloc-free]: copy size %d from %p to %p\n", copySize, oldbp, newbp);
+                show_list();
+            #endif
+            return newbp;
+        }
+
+        
+        
+        if (next_blk_size >= 2*DSIZE)
+        {
+            PUT(HDRP(bp), PACK(req_size_aligned, 1));
+            PUT(FTRP(bp), PACK(req_size_aligned, 1));
+            
+            void * next_bp  = NEXT_BLKP(bp);
+            PUT(HDRP(next_bp), PACK(next_blk_size, 0));
+            PUT(FTRP(next_bp), PACK(next_blk_size, 0));
+            coalesce(next_bp);
+            #ifdef DEBUG
+                printf("DEBUG [mm_realloc-merge-split]: split a block at %p\n", next_bp);
+                show_list();
+            #endif
+            return bp;
+        }
+        else
+        {
+            PUT(HDRP(bp), PACK(overall_size, 1));
+            PUT(FTRP(bp), PACK(overall_size, 1));
+            #ifdef DEBUG
+                printf("DEBUG [mm_realloc-merge]: merge the next block\n");
+                show_list();
+            #endif
+            return bp;
+        }
+        
     }
 
     // split to another block, coalesce
@@ -356,7 +391,7 @@ void *mm_realloc(void *bp, size_t req_size)
 
 
     // do nothing
-    else
+    else 
     {
         #ifdef DEBUG
             printf("DEBUG [mm_realloc-do-nothing]: \n");

@@ -43,7 +43,7 @@
 - [ ] explicit free only list
 - [ ] if block is allocated, donot write footer
 - [ ] if prev block is allocated, current block bit is 1
-- [ ] place-split: if next block is free, fragement == 8 Bytes, try to coalesce with the next block when the next block is free
+- [x] realloc: 如果需要扩容, 并且next是空的, 并且curr+next空间足够, 就不用find first fit
 
 #### mm_init
 
