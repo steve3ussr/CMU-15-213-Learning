@@ -24,28 +24,25 @@
  ********************************************************/
 team_t team = {
     /* Team name */
-    "骗子公司",
+    "Lier Team",
     /* First member's full name */
-    "九老师",
+    "Steve Zhao",
     /* First member's email address */
-    "steve.zhao@tongji.edu.com.cn",
+    "steve.zhao@tongji.edu.cn",
     /* Second member's full name (leave blank if none) */
     "",
     /* Second member's email address (leave blank if none) */
     ""
 };
 
-/* single word (4) or double word (8) alignment */
-#define ALIGNMENT 8
-
-
-/* rounds up to the nearest multiple of ALIGNMENT */
-#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
-
-
+/*********************************************************
+ * Given macros
+ ********************************************************/
+#define ALIGNMENT 8 // single word (4) or double word (8) alignment
+#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7) // rounds up to the nearest multiple of ALIGNMENT
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
-/* self defined macros */
+/* macros from book */
 #define WSIZE               4
 #define DSIZE               8
 #define CHUNKSIZE           (1<<12)  // 4K
@@ -55,15 +52,20 @@ team_t team = {
 #define PUT(p, val)         (*(unsigned int *)(p) = (val))
 #define GET_SIZE(p)         (GET(p) & (~0x7))
 #define GET_ALLOC(p)        (GET(p) & (0x1))
-#define GET_PREV_ALLOC(p)   (GET(p) & (0x2))
 #define HDRP(bp)            ((char *)(bp) - WSIZE)
-#define FTRP(bp)            ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
-#define NEXT_BLKP(bp)       ((char *)(bp) + GET_SIZE(HDRP(bp)))
+#define FTRP(bp)            ((char *)(bp) + GET_BLK_SIZE(bp) - DSIZE)
+#define NEXT_BLKP(bp)       ((char *)(bp) + GET_BLK_SIZE(bp))
 #define PREV_BLKP(bp)       ((char *)(bp) - GET_SIZE(HDRP(bp) - WSIZE))
 
-/* self defined vars */
-void * heap_listp;  // the init bp
+/*********************************************************
+ * self defined macros
+ ********************************************************/
+#define GET_PREV_ALLOC(p)   (GET(p) & (0x4))
+#define GET_NEXT_ALLOC(p)   (GET(p) & (0x2))
+#define GET_BLK_SIZE(bp)    (GET_SIZE(HDRP(bp)))
+#define GET_BLK_ALLOC(bp)   (GET_ALLOC(HDRP(bp)))
 
+void * heap_listp;
 static void * find_fit(size_t);
 static void * coalesce(void *);
 static void * extend_heap(size_t);
@@ -119,18 +121,18 @@ static void * extend_heap(size_t words)
     #endif
     bp = coalesce(bp);
     #ifdef DEBUG
-        printf("DEBUG [extend_heap-coalesce]: bp is %p, size %d\n", bp, GET_SIZE(HDRP(bp)));
+        printf("DEBUG [extend_heap-coalesce]: bp is %p, size %d\n", bp, GET_BLK_SIZE(bp));
     #endif
     return bp;
 }
 
 static void * coalesce(void * bp)
 {
-    size_t prev_alloc_status = GET_ALLOC(HDRP(PREV_BLKP(bp)));  // 0-free, 1-alloced
-    size_t prev_size         = GET_SIZE(HDRP(PREV_BLKP(bp)));
-    size_t next_alloc_status = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
-    size_t next_size         = GET_SIZE(HDRP(NEXT_BLKP(bp)));
-    size_t curr_size         = GET_SIZE(HDRP(bp));
+    size_t prev_alloc_status = GET_BLK_ALLOC(PREV_BLKP(bp));  // 0-free, 1-alloced
+    size_t prev_size         = GET_BLK_SIZE(PREV_BLKP(bp));
+    size_t next_alloc_status = GET_BLK_ALLOC(NEXT_BLKP(bp));
+    size_t next_size         = GET_BLK_SIZE(NEXT_BLKP(bp));
+    size_t curr_size         = GET_BLK_SIZE(bp);
 
     #ifdef DEBUG
         printf("DEBUG [coalesce-info-curr]: coalescing %p\n", bp);
@@ -230,7 +232,7 @@ void *mm_malloc(size_t size)
 static void * find_fit(size_t size)
 {
     for (void * tmp=heap_listp; GET(HDRP(tmp))!=PACK(0, 1); tmp=NEXT_BLKP(tmp)) {
-        if ((!GET_ALLOC(HDRP(tmp))) && (GET_SIZE(HDRP(tmp)) >= size))
+        if ((!GET_BLK_ALLOC((tmp))) && (GET_BLK_SIZE(tmp) >= size))
         {
             #ifdef DEBUG
                 printf("DEBUG [find_fit]: find fit finished. First-Fit bp is %p\n", tmp);
@@ -246,7 +248,7 @@ static void * find_fit(size_t size)
 
 static void place(void * bp, size_t size)
 {
-    size_t curr_size = GET_SIZE(HDRP(bp));
+    size_t curr_size = GET_BLK_SIZE(bp);
     #ifdef DEBUG
         printf("DEBUG [place]: overall size is %d\n", curr_size);
     #endif
@@ -265,7 +267,7 @@ static void place(void * bp, size_t size)
     PUT(HDRP(bp), PACK(size, 1));
     PUT(FTRP(bp), PACK(size, 1));
     #ifdef DEBUG
-        printf("DEBUG [place-split-curr]: place at %p, size is %d\n", bp, GET_SIZE(HDRP(bp)));
+        printf("DEBUG [place-split-curr]: place at %p, size is %d\n", bp, GET_BLK_SIZE(bp));
     #endif
 
 
@@ -273,7 +275,7 @@ static void place(void * bp, size_t size)
     PUT(HDRP(bp), PACK(curr_size-size, 0));
     PUT(FTRP(bp), PACK(curr_size-size, 0));
     #ifdef DEBUG
-        printf("DEBUG [place-split-next]: next free bp is %p, size is %d\n", bp, GET_SIZE(HDRP(bp)));
+        printf("DEBUG [place-split-next]: next free bp is %p, size is %d\n", bp, GET_BLK_SIZE(bp));
     #endif
     coalesce(bp);
 }
@@ -287,8 +289,8 @@ void mm_free(void *bp)
     #ifdef DEBUG
         printf("DEBUG [mm_free]: freeing %p\n", bp);
     #endif
-    PUT(HDRP(bp), PACK(GET_SIZE(HDRP(bp)), 0));
-    PUT(FTRP(bp), PACK(GET_SIZE(FTRP(bp)), 0));
+    PUT(HDRP(bp), PACK(GET_BLK_SIZE(bp), 0));
+    PUT(FTRP(bp), PACK(GET_BLK_SIZE(bp), 0));
     coalesce(bp);
 
     #ifdef DEBUG
@@ -305,7 +307,7 @@ void *mm_realloc(void *bp, size_t req_size)
     if (req_size == 0) { mm_free(bp); }
 
     size_t req_size_aligned = ALIGN(req_size) + DSIZE;
-    size_t curr_size = GET_SIZE(HDRP(bp));
+    size_t curr_size = GET_BLK_SIZE(bp);
     #ifdef DEBUG
         printf("DEBUG [mm_realloc]: original size %d, aligned to %d, current block size is %d\n", 
                req_size, 
@@ -318,18 +320,9 @@ void *mm_realloc(void *bp, size_t req_size)
     void *newbp;
     size_t copySize;
 
-    // do nothing
-    if (req_size_aligned == curr_size) 
-    {
-        #ifdef DEBUG
-            printf("DEBUG [mm_realloc-do-nothing]: \n");
-            show_list();
-        #endif
-        return bp; 
-    }
 
     // malloc, memcpy, free
-    else if (req_size_aligned > curr_size)
+    if (req_size_aligned > curr_size)
     {
         // copySize = *(size_t *)((char *)oldbp - SIZE_T_SIZE);
         copySize = GET_SIZE(HDRP(oldbp)) - DSIZE;
@@ -361,37 +354,17 @@ void *mm_realloc(void *bp, size_t req_size)
         return bp;
     }
 
-    // split to fragment, ignore it
+
+    // do nothing
     else
     {
-        // PUT(HDRP(bp), PACK(req_size_aligned, 1));
-        // PUT(FTRP(bp), PACK(req_size_aligned, 1));
-
-        // #ifdef DEBUG
-        //     printf("DEBUG [mm_realloc-frag]: frag a block size %d\n", curr_size-req_size_aligned);
-        // #endif
-
-        // if ( !GET_ALLOC(HDRP(NEXT_BLKP(bp))) )
-        // {
-        //     void * next_bp = bp = NEXT_BLKP(bp);
-        //     PUT(HDRP(next_bp), PACK(curr_size-req_size_aligned, 0));
-        //     PUT(FTRP(next_bp), PACK(curr_size-req_size_aligned, 0));
-        //     #ifdef DEBUG
-        //         printf("DEBUG [mm_realloc-frag]: frag can be coalesced\n");
-        //     #endif
-        //     coalesce(next_bp);
-        // }
-        // #ifdef DEBUG
-        //     show_list();
-        // #endif
-        // return bp;
-        
         #ifdef DEBUG
+            printf("DEBUG [mm_realloc-do-nothing]: \n");
             show_list();
         #endif
-        return bp;
-
+        return bp; 
     }
+
 }
 
 void show_list()
