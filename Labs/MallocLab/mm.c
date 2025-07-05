@@ -24,11 +24,11 @@
  ********************************************************/
 team_t team = {
     /* Team name */
-    "ateam",
+    "骗子公司",
     /* First member's full name */
-    "Harry Bovik",
+    "九老师",
     /* First member's email address */
-    "bovik@cs.cmu.edu",
+    "steve.zhao@tongji.edu.com.cn",
     /* Second member's full name (leave blank if none) */
     "",
     /* Second member's email address (leave blank if none) */
@@ -282,14 +282,14 @@ static void place(void * bp, size_t size)
 /*
  * mm_free - Freeing a block does nothing.
  */
-void mm_free(void *ptr)
+void mm_free(void *bp)
 {
     #ifdef DEBUG
-        printf("DEBUG [mm_free]: freeing %p\n", ptr);
+        printf("DEBUG [mm_free]: freeing %p\n", bp);
     #endif
-    PUT(HDRP(ptr), PACK(GET_SIZE(HDRP(ptr)), 0));
-    PUT(FTRP(ptr), PACK(GET_SIZE(FTRP(ptr)), 0));
-    coalesce(ptr);
+    PUT(HDRP(bp), PACK(GET_SIZE(HDRP(bp)), 0));
+    PUT(FTRP(bp), PACK(GET_SIZE(FTRP(bp)), 0));
+    coalesce(bp);
 
     #ifdef DEBUG
         show_list();
@@ -299,29 +299,99 @@ void mm_free(void *ptr)
 /*
  * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
  */
-void *mm_realloc(void *ptr, size_t size)
+void *mm_realloc(void *bp, size_t req_size)
 {
-    if (ptr == NULL){
-        return mm_malloc(size);
-    }
-    if (size == 0){
-        mm_free(ptr);
-    }
+    if (bp == NULL) { return mm_malloc(req_size); }
+    if (req_size == 0) { mm_free(bp); }
 
-    void *oldptr = ptr;
-    void *newptr;
+    size_t req_size_aligned = ALIGN(req_size) + DSIZE;
+    size_t curr_size = GET_SIZE(HDRP(bp));
+    #ifdef DEBUG
+        printf("DEBUG [mm_realloc]: original size %d, aligned to %d, current block size is %d\n", 
+               req_size, 
+               req_size_aligned, 
+               curr_size);
+    #endif
+
+
+    void *oldbp = bp;
+    void *newbp;
     size_t copySize;
-    
-    newptr = mm_malloc(size);
-    if (newptr == NULL)
-      return NULL;
 
-    copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
-    if (size < copySize)
-      copySize = size;
-    memcpy(newptr, oldptr, copySize);
-    mm_free(oldptr);
-    return newptr;
+    // do nothing
+    if (req_size_aligned == curr_size) 
+    {
+        #ifdef DEBUG
+            printf("DEBUG [mm_realloc-do-nothing]: \n");
+            show_list();
+        #endif
+        return bp; 
+    }
+
+    // malloc, memcpy, free
+    else if (req_size_aligned > curr_size)
+    {
+        // copySize = *(size_t *)((char *)oldbp - SIZE_T_SIZE);
+        copySize = GET_SIZE(HDRP(oldbp)) - DSIZE;
+        newbp = mm_malloc(req_size);
+        memcpy(newbp, oldbp, copySize);
+        mm_free(oldbp);
+        #ifdef DEBUG
+            printf("DEBUG [mm_realloc-malloc-free]: copy size %d from %p to %p\n", copySize, oldbp, newbp);
+            show_list();
+        #endif
+        return newbp;
+    }
+
+    // split to another block, coalesce
+    else if (curr_size - req_size_aligned >= 2*DSIZE)
+    {
+        PUT(HDRP(bp), PACK(req_size_aligned, 1));
+        PUT(FTRP(bp), PACK(req_size_aligned, 1));
+
+        void * next_bp  = NEXT_BLKP(bp);
+        PUT(HDRP(next_bp), PACK(curr_size-req_size_aligned, 0));
+        PUT(FTRP(next_bp), PACK(curr_size-req_size_aligned, 0));
+        
+        coalesce(next_bp);
+        #ifdef DEBUG
+            printf("DEBUG [mm_realloc-split]: split a block size %d\n", curr_size-req_size_aligned);
+            show_list();
+        #endif
+        return bp;
+    }
+
+    // split to fragment, ignore it
+    else
+    {
+        // PUT(HDRP(bp), PACK(req_size_aligned, 1));
+        // PUT(FTRP(bp), PACK(req_size_aligned, 1));
+
+        // #ifdef DEBUG
+        //     printf("DEBUG [mm_realloc-frag]: frag a block size %d\n", curr_size-req_size_aligned);
+        // #endif
+
+        // if ( !GET_ALLOC(HDRP(NEXT_BLKP(bp))) )
+        // {
+        //     void * next_bp = bp = NEXT_BLKP(bp);
+        //     PUT(HDRP(next_bp), PACK(curr_size-req_size_aligned, 0));
+        //     PUT(FTRP(next_bp), PACK(curr_size-req_size_aligned, 0));
+        //     #ifdef DEBUG
+        //         printf("DEBUG [mm_realloc-frag]: frag can be coalesced\n");
+        //     #endif
+        //     coalesce(next_bp);
+        // }
+        // #ifdef DEBUG
+        //     show_list();
+        // #endif
+        // return bp;
+        
+        #ifdef DEBUG
+            show_list();
+        #endif
+        return bp;
+
+    }
 }
 
 void show_list()

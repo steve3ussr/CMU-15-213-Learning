@@ -93,7 +93,7 @@
   - eq: do nothing
   - diff == 8 Bytes
     - next block is free: coalesce
-    - otherwise: fragment
+    - otherwise: fragment, ignore it (题目要求block不能缩小, 所以这里什么都不许做)
   - diff >= 16 Bytes: split, coalesce 
 - requested size > curr size: malloc，memcpy，free
 
