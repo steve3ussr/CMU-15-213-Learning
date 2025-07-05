@@ -57,7 +57,7 @@ team_t team = {
 #define GET_ALLOC(p)        (GET(p) & (0x1))
 #define GET_PREV_ALLOC(p)   (GET(p) & (0x2))
 #define HDRP(bp)            ((char *)(bp) - WSIZE)
-#define FTRP(bp)            ((char *)(bp) + GET_SIZE(HDRP(bp)) - WSIZE)
+#define FTRP(bp)            ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
 #define NEXT_BLKP(bp)       ((char *)(bp) + GET_SIZE(HDRP(bp)))
 #define PREV_BLKP(bp)       ((char *)(bp) - GET_SIZE(HDRP(bp) - WSIZE))
 
@@ -68,6 +68,7 @@ static void * find_fit(size_t);
 static void * coalesce(void *);
 static void * extend_heap(size_t);
 static void place(void *, size_t);
+void show_list();
 
 
 /* 
@@ -85,7 +86,7 @@ int mm_init(void)
     PUT(tmp+3*WSIZE, PACK(0    , 1));
     heap_listp = tmp+2*WSIZE;
     #ifdef DEBUG
-        printf("\nDEBUG [mm_init]: first bp is %p\n", heap_listp);
+        printf("\nDEBUG [mm_init]: heap_listp is %p\n", heap_listp);
     #endif
 
     void * res_extrend_heap;
@@ -93,7 +94,8 @@ int mm_init(void)
         return -1;
 
     #ifdef DEBUG
-        printf("DEBUG [mm_init]: extend heap is %p\n", res_extrend_heap);
+        printf("DEBUG [mm_init]: extend heap start from %p\n", res_extrend_heap);
+        show_list();
     #endif
 
     return 0;
@@ -113,11 +115,11 @@ static void * extend_heap(size_t words)
     PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1));
     
     #ifdef DEBUG
-        printf("DEBUG [extend_heap]: mem_sbrk return %p, extent words %d (real bytes %d); coalesce now\n", bp, (int)words, (int)real_bytes);
+        printf("DEBUG [extend_heap-sbrk]: sbrk return %p, extent %d words (%d real bytes)\n", bp, (int)words, (int)real_bytes);
     #endif
     bp = coalesce(bp);
     #ifdef DEBUG
-        printf("DEBUG [extend_heap]: coalesced bp is %p\n", bp);
+        printf("DEBUG [extend_heap-coalesce]: bp is %p, size %d\n", bp, GET_SIZE(HDRP(bp)));
     #endif
     return bp;
 }
@@ -130,9 +132,16 @@ static void * coalesce(void * bp)
     size_t next_size         = GET_SIZE(HDRP(NEXT_BLKP(bp)));
     size_t curr_size         = GET_SIZE(HDRP(bp));
 
+    #ifdef DEBUG
+        printf("DEBUG [coalesce-info-curr]: coalescing %p\n", bp);
+        printf("DEBUG [coalesce-info-prev]: size %d (alloc %d)\n", prev_size, prev_alloc_status);
+        printf("DEBUG [coalesce-info-next]: size %d (alloc %d)\n", next_size, next_alloc_status);
+    #endif
+
+
     if (prev_alloc_status && next_alloc_status){
         #ifdef DEBUG
-            printf("DEBUG [coalesce]: no need to coalesce\n");
+            printf("DEBUG [coalesce-switch]: no need to coalesce\n");
         #endif
         return bp;
     }
@@ -140,7 +149,7 @@ static void * coalesce(void * bp)
     // prev is free, next is alloced
     else if (!prev_alloc_status && next_alloc_status){
         #ifdef DEBUG
-            printf("DEBUG [coalesce]: prev is free\n");
+            printf("DEBUG [coalesce-switch]: prev is free\n");
         #endif
         size_t new_size = curr_size + prev_size;
         PUT(HDRP(PREV_BLKP(bp)), PACK(new_size, 0));
@@ -151,7 +160,7 @@ static void * coalesce(void * bp)
     // prev is alloced, next is free
     else if (prev_alloc_status && !next_alloc_status){
         #ifdef DEBUG
-            printf("DEBUG [coalesce]: next is free\n");
+            printf("DEBUG [coalesce-switch]: next is free\n");
         #endif
         size_t new_size = curr_size + next_size;
         PUT(FTRP(NEXT_BLKP(bp)), PACK(new_size, 0));
@@ -161,14 +170,14 @@ static void * coalesce(void * bp)
     // prev is free, next is free
     else{
         #ifdef DEBUG
-            printf("DEBUG [coalesce]: both are free\n");
+            printf("DEBUG [coalesce-switch]: both are free\n");
         #endif
         size_t new_size = curr_size + next_size + prev_size;
         PUT(HDRP(PREV_BLKP(bp)), PACK(new_size, 0));
         PUT(FTRP(NEXT_BLKP(bp)), PACK(new_size, 0));
     }
     #ifdef DEBUG
-        printf("DEBUG [coalesce]: return bp is %p\n", bp);
+        printf("DEBUG [coalesce-res]: return bp is %p\n", bp);
     #endif
     return bp;
 }
@@ -197,70 +206,37 @@ void *mm_malloc(size_t size)
     void * bp;
     if ((bp = find_fit(aligned_size)) != NULL){
         #ifdef DEBUG
-            printf("DEBUG [mm_malloc]: find a fit, placing size %d at %p\n", (int)(size), bp);
+            printf("DEBUG [mm_malloc-find_fit]: placing size %d at %p\n", size, bp);
         #endif
         place(bp, aligned_size);
+        #ifdef DEBUG
+            show_list();
+        #endif
         return bp;
     }
 
     if ((bp = extend_heap(extend_size/WSIZE)) == NULL)
         return NULL;
     #ifdef DEBUG
-        printf("DEBUG [mm_malloc]: find not fit, extend heap; placing size %d at %p\n", (int)(size), bp);
+        printf("DEBUG [mm_malloc-extend_heap]: placing size %d at %p\n", size, bp);
     #endif
     place(bp, aligned_size);
+    #ifdef DEBUG
+        show_list();
+    #endif
     return bp;
-
 }
 
 static void * find_fit(size_t size)
 {
-    #ifdef DEBUG
-        printf("DEBUG [find_fit]: start to find\n\n");
-        printf("    DEBUG [find_fit]: BP               ALLOC SIZE  \n");
-    #endif
-    void * tmp=heap_listp;
-    tmp = NEXT_BLKP(tmp);
-    tmp = NEXT_BLKP(tmp);
-    #ifdef DEBUG
-        printf("    DEBUG [find_fit]: BP %p    %d     %d  \n", tmp, (int)(GET_ALLOC(HDRP(tmp))), (unsigned int)(GET_SIZE(HDRP(tmp))));
-        printf("    DEBUG [find_fit]: %d, %d, %d\n", GET(tmp), PACK(0, 1), GET(tmp)!=PACK(0, 1));
-    #endif
-    return NULL;
-
-
-
-    for (tmp=heap_listp; GET(tmp)!=PACK(0, 1); tmp=NEXT_BLKP(tmp)) {
-        #ifdef DEBUG
-            printf("    DEBUG [find_fit]: BP %p    %d     %d  \n", tmp, (int)(GET_ALLOC(HDRP(tmp))), (unsigned int)(GET_SIZE(HDRP(tmp))));
-        #endif
-
-        if (!GET_ALLOC(HDRP(tmp)))
-        {
-            #ifdef DEBUG
-                printf("    DEBUG [find_fit]:                            this block is free\n");
-            #endif
-        }
-        else 
-        {
-            #ifdef DEBUG
-                printf("    DEBUG [find_fit]:                            this block is allocated\n");
-            #endif
-        }
-
-
-        if (GET_SIZE(HDRP(tmp)) >= size)
-        {
-            #ifdef DEBUG
-                printf("    DEBUG [find_fit]: this block is big enough\n");
-            #endif
-        }
-
+    for (void * tmp=heap_listp; GET(HDRP(tmp))!=PACK(0, 1); tmp=NEXT_BLKP(tmp)) {
         if ((!GET_ALLOC(HDRP(tmp))) && (GET_SIZE(HDRP(tmp)) >= size))
+        {
             #ifdef DEBUG
                 printf("DEBUG [find_fit]: find fit finished. First-Fit bp is %p\n", tmp);
             #endif
             return tmp;
+        }
     }
     
     // tmp now points to epilogue block
@@ -271,11 +247,13 @@ static void * find_fit(size_t size)
 static void place(void * bp, size_t size)
 {
     size_t curr_size = GET_SIZE(HDRP(bp));
-
+    #ifdef DEBUG
+        printf("DEBUG [place]: overall size is %d\n", curr_size);
+    #endif
     // no need to split
     if (curr_size - size < 2*DSIZE) {
         #ifdef DEBUG
-            printf("DEBUG [place]: no need to split\n");
+            printf("DEBUG [place-not-split]: placed\n");
         #endif
         PUT(HDRP(bp), PACK(curr_size, 1));
         PUT(FTRP(bp), PACK(curr_size, 1));
@@ -287,14 +265,15 @@ static void place(void * bp, size_t size)
     PUT(HDRP(bp), PACK(size, 1));
     PUT(FTRP(bp), PACK(size, 1));
     #ifdef DEBUG
-        printf("DEBUG [place]: split; curr bp is %p\n", bp);
+        printf("DEBUG [place-split-curr]: place at %p, size is %d\n", bp, GET_SIZE(HDRP(bp)));
     #endif
+
 
     bp = NEXT_BLKP(bp);
     PUT(HDRP(bp), PACK(curr_size-size, 0));
     PUT(FTRP(bp), PACK(curr_size-size, 0));
     #ifdef DEBUG
-        printf("DEBUG [place]: split; empty bp is %p, size is %d\n", bp, (int)(curr_size-size));
+        printf("DEBUG [place-split-next]: next free bp is %p, size is %d\n", bp, GET_SIZE(HDRP(bp)));
     #endif
     coalesce(bp);
 }
@@ -311,6 +290,10 @@ void mm_free(void *ptr)
     PUT(HDRP(ptr), PACK(GET_SIZE(HDRP(ptr)), 0));
     PUT(FTRP(ptr), PACK(GET_SIZE(FTRP(ptr)), 0));
     coalesce(ptr);
+
+    #ifdef DEBUG
+        show_list();
+    #endif
 }
 
 /*
@@ -341,16 +324,16 @@ void *mm_realloc(void *ptr, size_t size)
     return newptr;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+void show_list()
+{
+    void * tmp = heap_listp;
+    int i=0;
+        printf("----------------- HEAP LIST -----------------\n");
+        printf("    DEBUG [show list]: %-10s \t ALLOC \t SIZE   \t GET_HDR\n", "BP");
+    for (; GET(HDRP(tmp))!=PACK(0, 1) && (i<10); tmp=NEXT_BLKP(tmp)) {
+        printf("    DEBUG [show list]: %-p \t %-5d \t %-6d \t %d\n", tmp, (int)(GET_ALLOC(HDRP(tmp))), (unsigned int)(GET_SIZE(HDRP(tmp))), GET(HDRP(tmp)));
+        i++;
+    }
+        printf("    DEBUG [show list]: %-p \t %-5d \t %-6d \t %d\n", tmp, (int)(GET_ALLOC(HDRP(tmp))), (unsigned int)(GET_SIZE(HDRP(tmp))), GET(HDRP(tmp)));
+        printf("---------------------------------------------\n");
+}

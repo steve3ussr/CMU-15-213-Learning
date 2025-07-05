@@ -38,6 +38,13 @@
 
 ### mm.c
 
+#### opt
+
+- [ ] explicit free only list
+- [ ] if block is allocated, donot write footer
+- [ ] if prev block is allocated, current block bit is 1
+- [ ] place-split: if next block is free, fragement == 8 Bytes, try to coalesce with the next block when the next block is free
+
 #### mm_init
 
 - 返回初始化状态
@@ -82,7 +89,13 @@
 
 #### mm_realloc
 
-
+- requested size <= curr size: mod in-place
+  - eq: do nothing
+  - diff == 8 Bytes
+    - next block is free: coalesce
+    - otherwise: fragment
+  - diff >= 16 Bytes: split, coalesce 
+- requested size > curr size: malloc，memcpy，free
 
 
 
@@ -120,4 +133,117 @@
 - profiler: 优化性能
 
 
+
+## debug commands
+
+compile: 
+
+```
+gcc -Wall -Og -m32 -DDEBUG  -c -o mm.o mm.c; gcc -Wall -Og -m32 -o mdriver mdriver.o mm.o memlib.o fsecs.o fcyc.o clock.o ftimer.o -DDEBUG
+
+make clean; make;
+```
+
+objdump:
+
+```
+```
+
+final exec
+
+```
+./mdriver -f ./traces/short1.rep -V
+```
+
+
+
+gdb: 
+
+```
+gdb ./mdriver
+
+(gdb) run -f ./traces/short1.rep -V
+
+
+```
+
+
+
+0x56557940  coalesce
+
+0x56557951 in coalesce ()
+
+```
+Dump of assembler code for function coalesce:
+   0x56557940 <+0>:     push   %ebp
+   0x56557941 <+1>:     mov    %eax,%ecx
+   0x56557943 <+3>:     push   %edi
+   0x56557944 <+4>:     push   %esi
+   0x56557945 <+5>:     push   %ebx
+   0x56557946 <+6>:     mov    -0x8(%eax),%edx
+   0x56557949 <+9>:     and    $0xfffffff8,%edx
+   0x5655794c <+12>:    sub    %edx,%ecx
+   0x5655794e <+14>:    mov    -0x4(%eax),%edx
+   0x56557951 <+17>:    mov    -0x4(%ecx),%ebp
+   0x56557954 <+20>:    lea    -0x4(%ecx),%ebx
+   0x56557957 <+23>:    and    $0xfffffff8,%edx
+   0x5655795a <+26>:    mov    -0x4(%eax,%edx,1),%ecx
+   0x5655795e <+30>:    mov    %ebp,%esi
+   0x56557960 <+32>:    and    %ecx,%esi
+   0x56557962 <+34>:    and    $0x1,%esi
+   0x56557965 <+37>:    jne    0x5655798d <coalesce+77>
+   0x56557967 <+39>:    mov    %ebp,%edi
+   0x56557969 <+41>:    mov    %ebp,%esi
+   0x5655796b <+43>:    not    %edi
+   0x5655796d <+45>:    and    $0xfffffff8,%esi
+   0x56557970 <+48>:    and    %ecx,%edi
+   0x56557972 <+50>:    and    $0x1,%edi
+   0x56557975 <+53>:    je     0x56557998 <coalesce+88>
+   0x56557977 <+55>:    add    %esi,%edx
+   0x56557979 <+57>:    mov    %edx,(%ebx)
+   0x5655797b <+59>:    mov    -0x4(%eax),%ecx
+   0x5655797e <+62>:    and    $0xfffffff8,%ecx
+   0x56557981 <+65>:    mov    %edx,-0x4(%eax,%ecx,1)
+   0x56557985 <+69>:    mov    -0x8(%eax),%edx
+   0x56557988 <+72>:    and    $0xfffffff8,%edx
+--Type <RET> for more, q to quit, c to continue without paging--
+   0x5655798b <+75>:    sub    %edx,%eax
+   0x5655798d <+77>:    pop    %ebx
+   0x5655798e <+78>:    pop    %esi
+   0x5655798f <+79>:    pop    %edi
+   0x56557990 <+80>:    pop    %ebp
+   0x56557991 <+81>:    ret
+   0x56557992 <+82>:    lea    0x0(%esi),%esi
+   0x56557998 <+88>:    mov    %ecx,%edi
+   0x5655799a <+90>:    not    %ecx
+   0x5655799c <+92>:    and    %ebp,%ecx
+   0x5655799e <+94>:    and    $0xfffffff8,%edi
+   0x565579a1 <+97>:    and    $0x1,%ecx
+   0x565579a4 <+100>:   je     0x565579b8 <coalesce+120>
+   0x565579a6 <+102>:   add    %edi,%edx
+   0x565579a8 <+104>:   mov    %edx,-0x4(%eax,%edx,1)
+   0x565579ac <+108>:   mov    %edx,-0x4(%eax)
+   0x565579af <+111>:   pop    %ebx
+   0x565579b0 <+112>:   pop    %esi
+   0x565579b1 <+113>:   pop    %edi
+   0x565579b2 <+114>:   pop    %ebp
+   0x565579b3 <+115>:   ret
+   0x565579b4 <+116>:   lea    0x0(%esi,%eiz,1),%esi
+   0x565579b8 <+120>:   add    %edi,%esi
+   0x565579ba <+122>:   add    %edx,%esi
+   0x565579bc <+124>:   mov    %esi,(%ebx)
+   0x565579be <+126>:   mov    -0x4(%eax),%edx
+   0x565579c1 <+129>:   and    $0xfffffff8,%edx
+   0x565579c4 <+132>:   mov    -0x4(%eax,%edx,1),%ecx
+   0x565579c8 <+136>:   lea    -0x4(%eax,%edx,1),%edx
+   0x565579cc <+140>:   and    $0xfffffff8,%ecx
+   0x565579cf <+143>:   mov    %esi,(%edx,%ecx,1)
+   0x565579d2 <+146>:   pop    %ebx
+--Type <RET> for more, q to quit, c to continue without paging--
+   0x565579d3 <+147>:   pop    %esi
+   0x565579d4 <+148>:   pop    %edi
+   0x565579d5 <+149>:   pop    %ebp
+   0x565579d6 <+150>:   ret
+End of assembler dump.
+```
 

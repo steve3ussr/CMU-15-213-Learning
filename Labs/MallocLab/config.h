@@ -13,7 +13,7 @@
  * default tracefiles. You can override it at runtime with the -t flag.
  */
 // #define TRACEDIR "./traces/"
-#define TRACEDIR "./"
+#define TRACEDIR "./traces/"
 
 /*
  * This is the list of default tracefiles in TRACEDIR that the driver
@@ -24,18 +24,18 @@
  */
 #define DEFAULT_TRACEFILES \
     "short1-bal.rep",\
-    "short2-bal.rep"
-  // "amptjp-bal.rep",\
-  // "cccp-bal.rep",\
-  // "cp-decl-bal.rep",\
-  // "expr-bal.rep",\
-  // "coalescing-bal.rep",\
-  // "random-bal.rep",\
-  // "random2-bal.rep",\
-  // "binary-bal.rep",\
-  // "binary2-bal.rep",\
-  // "realloc-bal.rep",\
-  // "realloc2-bal.rep"
+    "short2-bal.rep", \
+    "amptjp-bal.rep",\
+    "cccp-bal.rep",\
+    "cp-decl-bal.rep",\
+    "expr-bal.rep",\
+    "coalescing-bal.rep",\
+    "random-bal.rep",\
+    "random2-bal.rep",\
+    "binary-bal.rep",\
+    "binary2-bal.rep"
+    // "realloc-bal.rep",\
+    // "realloc2-bal.rep"
 
 
 /*
