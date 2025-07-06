@@ -5,6 +5,45 @@
 - 只修改mm.c, 实现`malloc, free, realloc`
 - eval by `mdriver.c`
 
+## Update
+
+### v 1.0
+
+使用隐式链表, 全部为双重边界标记, first-fit放置策略, 尽可能的分割策略, 尽可能的合并策略
+
+### v 1.1
+
+优化了部分宏
+
+### v 1.2
+
+优化了remalloc, 如果当前块的next是空闲的, 并且可以合并, 那就不需要free并且malloc
+
+```
+Results for mm malloc:
+trace  valid  util     ops      secs  Kops
+ 0       yes   66%      12  0.000000    120000
+ 1       yes   89%      12  0.000000    120000
+ 2       yes   99%    5694  0.004379      1300
+ 3       yes   99%    5848  0.004375      1337
+ 4       yes   99%    6648  0.006359      1046
+ 5       yes  100%    5380  0.004282      1257
+ 6       yes   66%   14400  0.000081    178439
+ 7       yes   91%    4800  0.005406       888
+ 8       yes   92%    4800  0.005084       944
+ 9       yes   55%   12000  0.102540       117
+10       yes   51%   24000  0.144661       166
+11       yes   80%   14401  0.000113    127330
+12       yes   46%   14401  0.000069    207807
+Total          80%  112396  0.277349   405
+
+Perf index = 48 (util) + 27 (thru) = 75/100
+```
+
+此时coalescing, binary, binary2, realloc2的利用率较差, 除了short系列, realloc系列, coalescing之外性能都比较差
+
+
+
 ## Working On
 
 

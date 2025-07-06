@@ -45,7 +45,7 @@ team_t team = {
 /* macros from book */
 #define WSIZE               4
 #define DSIZE               8
-#define CHUNKSIZE           (1<<12)  // 4K
+#define CHUNKSIZE           (1<<12) // 4K
 #define MAX(x, y)           ((x)>(y)? (x) : (y))
 #define PACK(size, alloc)   ((size) | (alloc))
 #define GET(p)              (*(unsigned int *)(p))
@@ -177,11 +177,12 @@ static void * coalesce(void * bp)
         size_t new_size = curr_size + next_size + prev_size;
         PUT(HDRP(PREV_BLKP(bp)), PACK(new_size, 0));
         PUT(FTRP(NEXT_BLKP(bp)), PACK(new_size, 0));
+        bp = PREV_BLKP(bp);
     }
     #ifdef DEBUG
         printf("DEBUG [coalesce-res]: return bp is %p\n", bp);
     #endif
-    return bp;
+    return coalesce(bp);
 }
 
 /* 
@@ -201,8 +202,8 @@ void *mm_malloc(size_t size)
     if (size == 0)
         return NULL;
 
-    size_t aligned_size = ALIGN(size) + DSIZE;  // full block size
-    size_t extend_size = MAX(aligned_size, CHUNKSIZE);
+    int aligned_size = ALIGN(size) + DSIZE;  // full block size
+    int extend_size = MAX(aligned_size, CHUNKSIZE);
 
     // search
     void * bp;
