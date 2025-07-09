@@ -42,9 +42,125 @@ Perf index = 48 (util) + 27 (thru) = 75/100
 
 此时coalescing, binary, binary2, realloc2的利用率较差, 除了short系列, realloc系列, coalescing之外性能都比较差
 
+### v 2.0
+
+>  使用显式链表
 
 
-## Working On
+
+## Working on Version 2
+
+### macro, global vars
+
+- [x] ALIGN by 4 Bytes (WORD)
+- [x] macro FD=bp, BK=bp+4
+- [x] macro PREV_BLKP = BK content, content
+- [x] list_head, list_tail point to prologue, epilogue
+
+### mm init
+
+- [x] extend 8 WORDS manually, include 1 blank, 4 prologue, 3 epilogue
+- [x] connect prologue and epilogue
+- [x] extend chunksize
+
+### extend
+
+> join bp to the list immediately. this may induce low pert if fill the block right after extend, then join list is unnecessary
+
+- [x] ALIGN by even WORDS
+- [x] preserve var tail_prev
+- [x] bp = sbrk. fill HDR FIR
+- [x] create a new tail:
+  - [x] list_tail=NEXT_BLKP(bp)
+  - [x] FD(tail}=NULL
+  - [x] BK(tail)=bp
+  - [x] HDRP(tail)=0/1
+- [x] tail_prev
+  - [x] FD(tail_prev)=bp
+- [x] bp
+  - [x] FD(bp)=tail
+  - [x] BK(bp)=tail_prev
+- [x] coalesce(bp)
+
+### coalesce
+
+> if prev/next is free and coherent, merge
+
+### mm_malloc
+
+save footer space; if request 19 bytes, round up to 20; if request 21 bytes, round up to 28; `payload=((x+3)/8)*8+4`, `block size=((x+11)/8)*8`
+
+- [x] find-fit (return bp)
+  - [x] return place
+- [x] extend (return bp)
+  - [x] return place
+
+### find_fit
+
+> search from head, find dirst fit
+
+### void * place
+
+- [x] preserve vars: prev, next
+- [x] if no enough space to split: connect prev and next, mark bp as allocated
+- [x] if can be splitted:
+  - [x] calc split size, resize bp HDR/FTR size
+  - [x] allocate data to higher RAM (don't need to manage FD/BK)
+  - [x] coalesce split block
+
+### free
+
+- [x] mark bp as free
+- [x] create FTR (size, 0)
+- [x] located bp, link with prev and next
+- [x] coalesce
+#### loc method: LIFO
+- [ ] preserve head_next
+- [ ] modify FD/BK of head, head_next, bp
+
+#### loc method: Addr-Ordered
+
+- [x] traverse from head, until find a free block (curr) with addr>bp
+- [x] find prev of curr
+- [x] modify FD/BK of prev. bp, curr
+- [x] coalesce(bp)
+
+### mm_realloc
+
+> equal size, 0 size, NULL bp: do as it is
+
+#### request smaller size
+
+- [x] cannot split: do nothing
+- [ ] split:
+  - [ ] search for free block prev, next
+  - [ ] modify bp HDR
+  - [ ] modify bp FTR
+  - [ ] modify split HDR
+  - [ ] modify split FTR
+  - [ ] modi+y FD/BK of prev, split, next
+
+#### request greater size (aligned requested size > current block size)
+
+- [x] try to find a coherent next free block
+- [x] if there is a coherent next free block, and it has sufficient size (curr)
+  - [x] structure: prev, bp-curr, next
+  - [x] can split
+    - [x] mod bp HDR
+    - [x] locate new_curr
+    - [x] mod new_curr HDR/FTR
+    - [x] link prev-new_curr-next
+    - [x] coalesce new_curr
+  - [x] can not split
+    - [x] connect prev-next
+    - [x] mod bp HDR
+- [x] else: malloc, memcpy, free
+
+
+
+
+
+## Working On Version 1
 
 
 
@@ -178,9 +294,9 @@ Perf index = 48 (util) + 27 (thru) = 75/100
 compile: 
 
 ```
-gcc -Wall -Og -m32 -DDEBUG  -c -o mm.o mm.c; gcc -Wall -Og -m32 -o mdriver mdriver.o mm.o memlib.o fsecs.o fcyc.o clock.o ftimer.o -DDEBUG
+clear; gcc -Wall -Og -m32 -DDEBUG  -c -o mm.o mm.c; gcc -Wall -Og -m32 -o mdriver mdriver.o mm.o memlib.o fsecs.o fcyc.o clock.o ftimer.o -DDEBUG
 
-make clean; make;
+clear; make clean; make;
 ```
 
 objdump:
