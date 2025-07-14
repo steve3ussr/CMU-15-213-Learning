@@ -44,11 +44,190 @@ Perf index = 48 (util) + 27 (thru) = 75/100
 
 ### v 2.0
 
->  使用显式链表
+spec:
+
+1. block格式: 使用显式链表, 节约footer空间, 如果块为alloc则不写footer, mm_free时再写上
+2. alloc find-fit策略: first-fit
+3. alloc place策略: 如果剩余空间小于6 WORDS则不split; 如果split, 将alloc块的后部, 避免修改HEADER/FD/BK, 并且coalesce split
+4. free策略: address-ordered, coalesce
+5. realloc策略: 如果申请的块更小, 什么都不变; 如果申请的块更大, 一旦找到相邻的free nexrt block && 总共的size合适, 就直接原地扩展以避免memcpy, 剩余的空间根据实际情况split; 否则就malloc, memcpy, free
+6. coalesce: 寻找前后紧邻的free block
+
+result: 
+
+```
+Results for mm malloc:
+trace  valid  util     ops      secs  Kops
+ 0       yes   99%      12  0.000000     60000
+ 1       yes   89%      12  0.000000     60000
+ 2       yes   99%    5694  0.000174     32724
+ 3       yes   99%    5848  0.000141     41593
+ 4       yes   99%    6648  0.000431     15443
+ 5       yes   99%    5380  0.000239     22510
+ 6       yes   66%   14400  0.000117    123499
+ 7       yes   92%    4800  0.001777      2701
+ 8       yes   91%    4800  0.001807      2656
+ 9       yes   61%   12000  0.018089       663
+10       yes   53%   24000  0.073358       327
+11       yes   61%   14401  0.000155     92910
+12       yes   60%   14401  0.000108    133096
+Total          82%  112396  0.096396  1166
+
+Perf index = 49 (util) + 40 (thru) = 89/100
+```
 
 
 
-## Working on Version 2
+## Ver 4: Segregated Fit
+
+
+
+
+
+## Ver 3: Simple Segeregated Storage
+
+### size list
+
+- 1-4: 8
+- 5-12: 16
+- 13-28: 32 
+- [ ] 最佳的组合尚不知晓, 暂时使用 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, $\infty$
+- [ ] 通过一个专门的函数选择使用哪个list
+
+### memory format
+
+Initial memory format
+
+```
+|         |         |         |
++----+----+----+----+----+----+
+| 00 | 08 | FD | 16 | FD | 00 |
++----+----+----+----+----+----+
+           ^         ^
+        head_8    head_16
+```
+
+After extend (if extend a 16-bytes block), this format ensure payload address is aligned by 8
+
+```
+|         |         |         |         |         |
++----+----+----+----+----+====+====+====+====+----+
+| 00 | 08 | FD | 16 | FD | 16 | FD |    |    | 00 |
++----+----+----+----+----+====+====+====+====+----+
+           ^         ^         ^        
+        head_8    head_16   new_block
+```
+
+list structure, the last block’s FD is NULL
+
+```
++----+----+    +----+----+----+----+    +----+----+----+----+
+| 16 | FD | -> | 16 | FD |    |    | -> | 16 | 00 |    |    |
++----+----+    +----+----+----+----+    +----+----+----+----+
+      ^              ^                        ^
+  head_16            bp1                      bp2
+```
+
+malloc will detach the first free block
+
+```
++----+----+    +----+----+----+----+        +----+----+----+----+
+| 16 | FD | -> | 16 | 00 |    |    |        | 16 | P  | L  | D  |
++----+----+    +----+----+----+----+        +----+----+----+----+    
+      ^              ^                       ^    ^    
+  head_16            bp2                     |    bp1, payload start from here
+                                             |
+                                             ?
+```
+
+如果一个block是已分配的, 他的header可以改成head的指针, 但是对于combo block将无法区分block大小, 这里有两种方案:
+
+1. block free时使用size, alloc时使用pointer; 但是combo的block结构不同, footer中为尺寸, 普通block不需要footer; 这样的话align函数也会不一样
+2. block一直使用size, 不管什么操作都需要通过函数判断使用哪个list
+3. 每个block 都有header和footer, free时都装着size, alloc时header为pointer
+
+|              | 方案一                                                       | 方案二                         | 方案三                            |
+| ------------ | ------------------------------------------------------------ | ------------------------------ | --------------------------------- |
+| 空间节约程度 | 略大, 因为combo必须多占用DSIZE                               | 略小, combo只多占用WSIZE       | 更大, 所有block都需要额外2个words |
+| malloc性能   | 区别不大                                                     | 区别不大                       | 区别不大                          |
+| free性能     | 不需要判断使用哪个list, 但**需要判断是否为combo list**, 因为combo list的话需要查看footer中的size | 略低, 因为需要判断使用哪个list | 不需要判断list                    |
+| 复杂程度     | 复杂                                                         | 相对简单                       | 相对简单                          |
+| realloc性能  |                                                              |                                |                                   |
+| coalesce     |                                                              |                                |                                   |
+
+
+
+
+
+
+
+
+
+### global vars, macro
+
+- [x] head of several lists
+- [ ] ALIGN to block size
+
+### mm init
+
+- [x] create lists, each init with 2 WORDS; 2 blank words
+
+### mm_malloc
+
+- [ ] determine which head to use
+- [ ] normal list
+  - [ ] find if there is a free block
+  - [ ] if cannot find, extend
+  - [ ] place (bp must be the first of list)
+- [ ] jumbo list
+  - [ ] find fit
+  - [ ] extend jumbo, 
+
+### find fit
+
+```c
+for (void *bp=head_16; *bp; bp=NEXT_BLKP(bp)) return bp; return NULL;
+```
+
+
+
+### extend
+
+- [x] sbrk chunksize
+- [x] create several blocks, add to list from front
+  - [x] sbrk chunksize, return bp=bp_init
+  - [x] loop n times
+  - [x] `*bp=16`, `*(bp+4)=bp+4+16`, `bp+=16`
+  - [x] the last bp.FD=head
+  - [x] end loop
+  - [x] head=bp_init
+
+### place
+
+> head=bp -> next
+
+- [ ] bp=head, head=next
+- [ ] return bp
+
+### mm_free
+
+- [ ] curr=head
+- [ ] FD(bp)=curr, head=bp
+
+### mm_realloc
+
+- [ ] same list:
+  - [ ] ll: malloc, memcpy, free
+  - [ ] ge: do nothing
+- [ ] diff list: malloc, memcpy, free
+
+
+
+
+
+
+
+## Ver 2: Explicit Block List
 
 ### macro, global vars
 
@@ -160,7 +339,7 @@ save footer space; if request 19 bytes, round up to 20; if request 21 bytes, rou
 
 
 
-## Working On Version 1
+## Ver 1: Explicit Block List
 
 
 
