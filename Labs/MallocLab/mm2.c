@@ -60,7 +60,7 @@ team_t team = {
 #define GET_ALLOC(p)        (GET(p) & (0x1))
 #define HDRP(bp)            ((char *)(bp) - WSIZE)
 #define FTRP(bp)            ((char *)(bp) + GET_BLK_SIZE(bp) - DSIZE)
-#define NEXT_BLKP(bp)       ((void *)(*(uint *)(bp)))
+#define NEXT_BLKP(bp)       ((void *)GET(bp))
 #define PREV_BLKP(bp)       ((void *)(*(uint *)((char *)bp + WSIZE)))
 #define FD(bp)              (bp)
 #define BK(bp)              ((char *)(bp) + WSIZE)
@@ -107,8 +107,8 @@ int mm_init(void)
     PUT(tmp+7*WSIZE, tmp+2*WSIZE);      // BK: prologue
 
     // Global vars
-        list_head = tmp+2*WSIZE;
-        list_tail = tmp+6*WSIZE;
+    list_head = tmp+2*WSIZE;
+    list_tail = tmp+6*WSIZE;
     
     #if defined(DEBUG_MM_INIT) || defined(DEBUG) 
         printf("\nDEBUG [mm_init]: prologue, epilogue set\n");
@@ -141,10 +141,6 @@ static void * extend_heap(size_t words)
         return NULL;
 
     bp = (void *)((char *)bp - DSIZE);
-
-
-
-
     PUT(HDRP(bp), PACK(real_bytes, 0));
     PUT(FTRP(bp), PACK(real_bytes, 0));
 
@@ -160,7 +156,6 @@ static void * extend_heap(size_t words)
     #if defined(DEBUG_EXTEND) || defined(DEBUG) 
         printf("DEBUG [extend_heap][epilogue]: new epilogue at %p\n", list_tail);
     #endif
-
 
     // mod tail_prev
     PUT(FD(tail_prev), bp);
@@ -178,7 +173,6 @@ static void * extend_heap(size_t words)
 
 static void * coalesce(void * bp)
 {
-    
     // get prev, curr(bp), next status
     size_t curr_size            = GET_BLK_SIZE(bp);
 
@@ -293,8 +287,7 @@ void *mm_malloc(size_t size)
 
 static void * find_fit(size_t size)
 {
-    for (void * bp = list_head; bp != NULL; bp=NEXT_BLKP(bp)) 
-    {
+    for (void * bp = list_head; bp; bp=NEXT_BLKP(bp)) 
         if ((!GET_BLK_ALLOC(bp)) && (GET_BLK_SIZE(bp) >= size))
         {
             #if defined(DEBUG_FIND_FIT) || defined(DEBUG) 
@@ -302,8 +295,6 @@ static void * find_fit(size_t size)
             #endif
             return bp;
         }
-    }
-    
     return NULL;
 }
 
@@ -362,9 +353,8 @@ void mm_free(void *bp)
 
     // locate bp, link with prev and next
     void * curr, * prev;
-    for (curr=list_head; curr != NULL; curr=NEXT_BLKP(curr)){
-        if (curr > bp) break;    
-    }
+    for (curr=list_head; curr != NULL; curr=NEXT_BLKP(curr)) if (curr > bp) break;    
+
     if (curr == NULL){
         #if defined(DEBUG_FREE) || defined(DEBUG) 
             printf("DEBUG [mm_free][locate bp]: ERROR! curr is NULL, which means bp is higher than tail\n");
@@ -405,28 +395,8 @@ void *mm_realloc(void *bp, size_t req_size)
                curr_size);
     #endif
 
-    if (req_size_aligned > curr_size)
-    {
-        void * res;
-        res = mm_realloc_req_greater_block(bp, req_size_aligned);
-        return res;
-    }
-
-    else if (req_size_aligned == curr_size)
-    {
-        #if defined(DEBUG_REALLOC) || defined(DEBUG) 
-            printf("DEBUG [mm_realloc][eq]: do nothing\n");
-        #endif
-        return bp;
-    }
-
-    else
-    {
-        void * res;
-        res = mm_realloc_req_smaller_block(bp, req_size_aligned);
-        return res;
-    }
-
+    if (req_size_aligned > curr_size) return mm_realloc_req_greater_block(bp, req_size_aligned);
+    return bp;
 }
 
 static void * mm_realloc_req_greater_block(void * bp, size_t aligned_req_size)
@@ -499,29 +469,6 @@ static void * mm_realloc_req_greater_block(void * bp, size_t aligned_req_size)
         return newbp;
     }
 }
-
-static void * mm_realloc_req_smaller_block(void * bp, size_t req_size_aligned)
-{
-    size_t split_size = GET_BLK_SIZE(bp) - req_size_aligned;
-
-    // case 1
-    if (split_size < FRAG_SIZE * WSIZE)
-    {
-        #if defined(DEBUG_REALLOC) || defined(DEBUG) 
-            printf("DEBUG [mm_realloc][ll-cannot-split]: do nothing\n"); 
-        #endif
-        return bp;
-    }
-
-    else
-    {
-        #if defined(DEBUG_REALLOC) || defined(DEBUG) 
-            printf("DEBUG [mm_realloc][ll-can-split]: actually i can split, but i must protect redundant bytes\n"); 
-        #endif
-        return bp;
-    }
-}
-
 
 void show_list()
 {
