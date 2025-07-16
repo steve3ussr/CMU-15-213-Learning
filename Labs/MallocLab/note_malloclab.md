@@ -42,7 +42,7 @@ Perf index = 48 (util) + 27 (thru) = 75/100
 
 此时coalescing, binary, binary2, realloc2的利用率较差, 除了short系列, realloc系列, coalescing之外性能都比较差
 
-### v 2.0
+### v 2.0, v2.1
 
 spec:
 
@@ -76,7 +76,13 @@ Total          82%  112396  0.096396  1166
 Perf index = 49 (util) + 40 (thru) = 89/100
 ```
 
-v 3.0
+### v 2.x
+
+realloc时, 如果一个块位于末尾, 就直接extend, 而不是alloc, memcpy, free
+
+
+
+### v 3.0
 
 ```
 Results for mm malloc:
@@ -99,7 +105,9 @@ Total          66%  112396  0.001252 89795
 Perf index = 39 (util) + 40 (thru) = 79/100
 ```
 
+### v 3.x
 
+减少header占用空间
 
 
 
