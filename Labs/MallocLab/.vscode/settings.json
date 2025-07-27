@@ -3,6 +3,7 @@
         "*.m": "matlab",
         "*.catvbs": "vbs",
         "memlib.h": "c",
-        "config.h": "c"
+        "config.h": "c",
+        "mm.h": "c"
     }
 }

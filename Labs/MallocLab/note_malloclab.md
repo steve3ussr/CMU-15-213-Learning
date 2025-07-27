@@ -115,6 +115,48 @@ Perf index = 39 (util) + 40 (thru) = 79/100
 
 ## Ver 4: Segregated Fit
 
+- mm_init: 初始化指针
+
+- get_free_block: 根据传入的**对齐尺寸**, 自动找到对应的列表头, 并从这个列表头开始逐级查询, 直到找到满足条件的free block; 如果没找到, 就返回NULL
+
+- detach_block: 释放一个free block
+
+- extend_heap: 根据传入的**对齐尺寸**, 返回一个扩展块, 其头部为尺寸, 尾部为0
+
+- `_get_list_index`: 根据传入的**对齐尺寸**, 计算其对应的下标
+
+- get_list: 根据传入的**对齐尺寸**, 返回对应的表头
+
+- place: 接收一个**free block**， 一个**对齐尺寸**, 可能有以下几种情况
+
+  - 不可分割：剩余块大小小于16（其实只有可能是8/0）
+    - 如果free block来自list，就先分离
+    - 返回
+  - 可分割，并且分割块和当前块位于同一list
+    - 修改开头的size， 尾部的list
+    - 放置头部尺寸，返回
+  - **可分割，并且分割块和当前块处于不同list, 或者当前块来自extend**
+    - 如果free block来自list，就先分离
+    - 构造bp和split两个块
+    - 将split join
+    - 返回bp
+
+- join_in_list: 传入一个**free detached block with FTR==list**， 将其加入列表，并且尽可能合并
+
+  - 找到block对应的list
+  - 按照地址插入
+  - 合并
+
+- coalesce
+
+- 
+
+  
+
+
+
+
+
 
 
 
@@ -508,7 +550,7 @@ save footer space; if request 19 bytes, round up to 20; if request 21 bytes, rou
 compile: 
 
 ```
-clear; gcc -Wall -Og -m32 -DDEBUG  -c -o mm.o mm.c; gcc -Wall -Og -m32 -o mdriver mdriver.o mm.o memlib.o fsecs.o fcyc.o clock.o ftimer.o -DDEBUG
+clear; gcc -Wall -Og -m32 -DDEBUG  -c -o mm.o mm.c; gcc -Wall -Og -m32 -o mdriver mdriver.o mm.o memlib.o fsecs.o fcyc.o clock.o ftimer.o -DDEBUG; ./mdriver -f ./traces/short1-bal.rep -V
 
 clear; make clean; make;
 ```
@@ -521,7 +563,7 @@ objdump:
 final exec
 
 ```
-./mdriver -f ./traces/short1.rep -V
+./mdriver -V
 ```
 
 

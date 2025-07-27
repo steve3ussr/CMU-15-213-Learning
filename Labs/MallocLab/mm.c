@@ -14,6 +14,7 @@
 #include <assert.h>
 #include <unistd.h>
 #include <string.h>
+#include <math.h>
 
 #include "mm.h"
 #include "memlib.h"
@@ -39,9 +40,8 @@ team_t team = {
  * Macros
  ********************************************************/
 // ALIGN
-#define ALIGN(size)         (size+4)
 #define ALIGNMENT 4 // single word (4) or double word (8) alignment
-#define ALIGN_TO_FULLBLK(size)      (((size+3) & (~0x7)) + DSIZE)
+#define ALIGN_TO_FULLBLK(size)      (MAX((((size+3) & ~0x7) + DSIZE), 4*WSIZE))
 
 // DATA SIZE
 #define uint                unsigned int
@@ -54,228 +54,438 @@ team_t team = {
 // ACCESS TO BLOCK
 #define GET(p)              ((void *)(*(uint *)(p)))
 #define PUT(p, val)         (*(uint *)(p) = (uint)(val))
+
 #define HDRP(bp)            ((char *)(bp) - WSIZE)
-#define NEXT_BLKP(bp)       GET(bp)
-#define GET_BLK_SIZE(bp)    (GET(HDRP(bp)))
+#define FDP(bp)             (bp)
+#define BKP(bp)             ((char *)(bp) + WSIZE)
+#define FTRP(bp)            ((char *)(bp) + GET_SIZE(bp) - DSIZE)
+#define GET_SIZE(bp)        ((size_t)(GET(HDRP(bp))))
+#define NEXT(bp)            (GET(FDP(bp)))
+#define PREV(bp)            (GET(BKP(bp)))
 
 
 /*********************************************************
  * Global vars
  ********************************************************/
-void   *list_8,  *list_16,   *list_32,   *list_64,  *list_128;
-void *list_256, *list_512, *list_1024, *list_2048, *list_4096;
-void *list_jumbo;
+void *list_16,   *list_32,   *list_64,  *list_128;
+void *list_256, *list_512, *list_1024, *list_2048, *list_4096, *list_8192, *list_jumbo;
+void *heap_head;
 #define LIST_NUM                11
-#define BLOCK_NUM_LIMIT         10
-#define INIT_LIST(list, size)   do {PUT(list, 0); PUT(HDRP(list), size);} while (0)
+#define LIST_MAX_INDEX          (LIST_NUM-1)
+#define BLOCK_NUM_LIMIT         4
+#define INIT_LIST(list, init, index)   do {list=init+index*WSIZE; PUT(list, 0);} while (0)
 
-static void *list_map(size_t);
-static void extend_list(void *);
-static void *find_prev_by_size(size_t);
-static void *extend_place_jumbo(size_t);
-static void *place_curr(void *);
-static void *find_prev_by_addr(void *);
-static void coalesce(void *);
+void *get_free_block(size_t aligned_size);
+void *detach_block(void *bp);
+void *extend_heap(size_t aligned_size);
+uint _get_list_index(size_t aligned_size);
+void *get_list_by_size(size_t aligned_size);
+void *place(void *bp, size_t aligned_size);
+void join_in_list(void *bp);
+void coalesce(void *bp);
+void show_list(void *);
 
-/* 
- * mm_init - initialize the malloc package.
- */
+
 int mm_init(void){
-    void *tmp;
-    if ((tmp = mem_sbrk((LIST_NUM+1)*DSIZE)) == (void *)-1)
+    void* tmp;
+    if ((tmp = mem_sbrk((LIST_NUM+1)*WSIZE)) == (void *)-1)
         return -1;
 
-    PUT(tmp, 0);
-    list_8        = tmp+DSIZE*1 ; INIT_LIST(list_8,     8);
-    list_16       = tmp+DSIZE*2 ; INIT_LIST(list_16,    16);
-    list_32       = tmp+DSIZE*3 ; INIT_LIST(list_32,    32);
-    list_64       = tmp+DSIZE*4 ; INIT_LIST(list_64,    64);
-    list_128      = tmp+DSIZE*5 ; INIT_LIST(list_128,   128);
-    list_256      = tmp+DSIZE*6 ; INIT_LIST(list_256,   256);
-    list_512      = tmp+DSIZE*7 ; INIT_LIST(list_512,   512);
-    list_1024     = tmp+DSIZE*8 ; INIT_LIST(list_1024,  1024);
-    list_2048     = tmp+DSIZE*9 ; INIT_LIST(list_2048,  2048);
-    list_4096     = tmp+DSIZE*10; INIT_LIST(list_4096,  4096);
-    list_jumbo    = tmp+DSIZE*11; INIT_LIST(list_jumbo, 0);
-    PUT(tmp+DSIZE*11+WSIZE, 0);
+    // headers
+    heap_head = tmp;
+    INIT_LIST(list_16,      tmp, 0);
+    INIT_LIST(list_32,      tmp, 1);
+    INIT_LIST(list_64,      tmp, 2);
+    INIT_LIST(list_128,     tmp, 3);
+    INIT_LIST(list_256,     tmp, 4);
+    INIT_LIST(list_512,     tmp, 5);
+    INIT_LIST(list_1024,    tmp, 6);
+    INIT_LIST(list_2048,    tmp, 7);
+    INIT_LIST(list_4096,    tmp, 8);
+    INIT_LIST(list_8192,    tmp, 9);
+    INIT_LIST(list_jumbo,   tmp, 10);
+    PUT(tmp+11*WSIZE, 0);  // epilogue
 
-    #if defined(DEBUG) 
-        printf("\nDEBUG [mm_init]: finished. \n");
-        printf("DEBUG [mm_init][8\t]: %p\n", list_8);
-        printf("DEBUG [mm_init][16\t]: %p\n", list_16);
-        printf("DEBUG [mm_init][32\t]: %p\n", list_32);
-        printf("DEBUG [mm_init][64\t]: %p\n", list_64);
-        printf("DEBUG [mm_init][128\t]: %p\n", list_128);
-        printf("DEBUG [mm_init][256\t]: %p\n", list_256);
-        printf("DEBUG [mm_init][512\t]: %p\n", list_512);
-        printf("DEBUG [mm_init][1024\t]: %p\n", list_1024);
-        printf("DEBUG [mm_init][2048\t]: %p\n", list_2048);
-        printf("DEBUG [mm_init][4096\t]: %p\n", list_4096);
-        printf("DEBUG [mm_init][jumbo\t]: %p\n", list_jumbo);
+    #if defined(DEBUG) || defined(DEBUG_MM_INIT)
+        printf("\n[DEBUG][mm_init] list_16\t@ %p\n", list_16);
+        printf("[DEBUG][mm_init] list_32\t@ %p\n", list_32);
+        printf("[DEBUG][mm_init] list_64\t@ %p\n", list_64);
+        printf("[DEBUG][mm_init] list_128\t@ %p\n", list_128);
+        printf("[DEBUG][mm_init] list_256\t@ %p\n", list_256);
+        printf("[DEBUG][mm_init] list_512\t@ %p\n", list_512);
+        printf("[DEBUG][mm_init] list_1024\t@ %p\n", list_1024);
+        printf("[DEBUG][mm_init] list_2048\t@ %p\n", list_2048);
+        printf("[DEBUG][mm_init] list_4096\t@ %p\n", list_4096);
+        printf("[DEBUG][mm_init] list_8192\t@ %p\n", list_8192);
+        printf("[DEBUG][mm_init] list_jumbo\t@ %p\n", list_jumbo);
     #endif
+    
     return 0;
 }
 
-static void *list_map(size_t size){
-    void *res;
-    if (size <= 8)          res = list_8;
-    else if (size <= 16)    res = list_16;
-    else if (size <= 32)    res = list_32;
-    else if (size <= 64)    res = list_64;
-    else if (size <= 128)   res = list_128;
-    else if (size <= 256)   res = list_256;
-    else if (size <= 512)   res = list_512;
-    else if (size <= 1024)  res = list_1024;
-    else if (size <= 2048)  res = list_2048;
-    else if (size <= 4096)  res = list_4096;
-    else                    res = list_jumbo;
+void *get_free_block(size_t aligned_size)
+{
+    size_t index = _get_list_index(aligned_size);
+    void *curr;
+    void *list_head;
+    void *res = NULL;
+
+    for (int i=index; i<=LIST_MAX_INDEX; i++)
+    {
+        list_head = heap_head+WSIZE*i;
+
+        #if defined(DEBUG) || defined(DEBUG_GET_FREE_BLOCK)
+            printf("[DEBUG][get-free-block] start to find free block in list [%d, %d]\n", 1<<(i+3), 1<<(i+4));
+            show_list(list_head);
+        #endif
+
+        if (!GET(list_head)) continue; // this list is empty
+
+        for (curr=GET(list_head); curr; curr=NEXT(curr))
+            if (GET_SIZE(curr) >= aligned_size) {res = curr; break;}
+    }
+
+    #if defined(DEBUG) || defined(DEBUG_GET_FREE_BLOCK)
+        printf("[DEBUG][get-free-block] result is %p\n", res);
+
+    #endif
+
     return res;
 }
 
-void *mm_malloc(size_t size){
-    // align 4->8, 12->16
-    size_t size_blk = ALIGN_TO_FULLBLK(size);
+void *detach_block(void *bp)
+{
+    #if defined(DEBUG) || defined(DEBUG_DETACH_BLOCK)
+            printf("[DEBUG][detach_block] detach block %p\n", bp);
+            show_list(GET(FTRP(bp)));
+    #endif
+    void *prev = PREV(bp); 
+    void *next = NEXT(bp);
 
-    void *head = list_map(size_blk);
+    // prev is empty, this is the first block in list
+    if (!prev){
+        PUT(GET(FTRP(bp)), next); // GET(FTRP(bp)) is list_head
+    }
+    else{
+        PUT(FDP(prev), next);     // prev is another block
+    }
 
-    // normal list
-    if (head != list_jumbo) {
-        #if defined(DEBUG) 
-            printf("DEBUG [mm_malloc][normal-list]\n");
+    // if next: there is another block
+    // else:    bp is the last block
+    if (next) { PUT(BKP(next), prev); }
+    return bp;
+}
+
+void *extend_heap(size_t aligned_size)
+{
+    #if defined(DEBUG) || defined(DEBUG_EXTEND_HEAP)
+        printf("[DEBUG][extend-heap] extend size: %d\n", aligned_size);
+    #endif
+
+    // bp=sbrk, fill HDR FTR
+    void * bp;
+    if ((bp = mem_sbrk(aligned_size)) == (void *)-1)
+        return NULL;
+
+    PUT(bp+aligned_size-WSIZE, 0); // epilogue
+    PUT(HDRP(bp), aligned_size);
+    PUT(FTRP(bp), 0);
+    return bp;
+}
+
+uint _get_list_index(size_t aligned_size)
+{
+    uint size = (uint)(aligned_size-1);
+    uint res = 0;
+
+    uint r16 = size & 0xFFFF;
+    uint f16 = (size>>16) & 0xFFFF;
+    uint flag_f16 = !(!(f16));
+    res += (flag_f16<<4);
+    uint a16 = (f16 & (~(flag_f16-1))) + (r16 & (flag_f16-1));
+
+    uint r8 = a16 & 0xFF;
+    uint f8 = (a16>>8) & 0xFF;
+    uint flag_f8 = !(!(f8));
+    res += (flag_f8<<3);
+    uint a8 = (f8 & (~(flag_f8-1))) + (r8 & (flag_f8-1));
+
+    uint r4 = a8 & 0xF;
+    uint f4 = (a8>>4) & 0xF;
+    uint flag_f4 = !(!(f4));
+    res += (flag_f4<<2);
+    uint a4 =  (f4 & (~(flag_f4-1))) + (r4 & (flag_f4-1));
+
+    uint r2 = a4 & 0x3;
+    uint f2 = (a4>>2) & 0x3;
+    uint flag_f2 = !(!(f2));
+    res += (flag_f2<<1);
+    uint a2 =  (f2 & (~(flag_f2-1))) + (r2 & (flag_f2-1));
+
+    uint r1 = a2 & 0x1;
+    uint f1 = (a2>>1) & 0x1;
+    uint flag_f1 = !(!(f1));
+    res += flag_f1;
+    uint a1 =  (f1 & (~(flag_f1-1))) + (r1 & (flag_f1-1));
+    res += a1;
+
+    res = MIN(LIST_MAX_INDEX, res-4);
+    #if defined(DEBUG) || defined(DEBUG__GET_LIST_INDEX)
+        printf("[DEBUG][get-list-index] size %d -> [%d, %d]\n", aligned_size, 1<<(res+3), 1<<(res+4));
+    #endif
+    return res;
+}
+
+void *get_list_by_size(size_t aligned_size)
+{
+    return heap_head + WSIZE * _get_list_index(aligned_size);
+}
+
+void *place(void *bp, size_t aligned_size){
+    // get_free_block 返回一个在列表中正在连接中的block, 其HDR是尺寸, FTR是list head指针
+    // extend_heap 返回一个未连接的block, 除了HDR什么都没有
+    size_t block_size = GET_SIZE(bp);
+    size_t split_size = block_size - aligned_size;
+    void * block_head = GET(FTRP(bp));
+    #if defined(DEBUG) || defined(DEBUg_PLACE)
+        printf("[DEBUG][place] curr block %d, aligned %d, split size %d\n", block_size, aligned_size, split_size);
+    #endif
+
+    // 查看split_size应该属于哪个list
+    // 无法分割, 不属于任何list
+    if (split_size < 16){
+        #if defined(DEBUG) || defined(DEBUg_PLACE)
+            printf("[DEBUG][place][case 1] cannot split\n");
         #endif
-        if (!NEXT_BLKP(head)) {
-            #if defined(DEBUG) 
-                printf("DEBUG [mm_malloc][normal-list]: list empty, extend now\n");
-            #endif
-            extend_list(head);
-        }
+        if (block_head) detach_block(bp);
+        return bp;
+    }
 
-        #if defined(DEBUG) 
-            printf("DEBUG [mm_malloc][normal-list]: place first block in list\n");
+    // 可分割，并且分割块和当前块位于同一个list，那就直接分配当前块的后半部分
+    void *split_head = get_list_by_size(split_size);
+    if (split_head == block_head)
+    {
+        #if defined(DEBUG) || defined(DEBUg_PLACE)
+            printf("[DEBUG][place][case 2] split is in the same list, alloc block tail\n");
         #endif
-        return place_curr(head);}
+        PUT(HDRP(bp), split_size);
+        PUT(FTRP(bp), block_head);
+        void *res = bp + split_size;
+        PUT(HDRP(res), aligned_size);
+        return res;
+    }
+
+    // 可分割，并且分割块和当前块位于不同list
+    #if defined(DEBUG) || defined(DEBUg_PLACE)
+        printf("[DEBUG][place][case 3] split in diff list\n");
+    #endif
+    if (block_head) detach_block(bp);
+    // split加入list
+    void *split = bp + aligned_size;
+    PUT(HDRP(split), split_size);
+    PUT(FTRP(split), split_head);
+    join_in_list(split);
+
+    // 返回bp
+    PUT(HDRP(bp), aligned_size);
+    return bp;
+}
+
+void join_in_list(void *bp)
+{
+    void *list = GET(FTRP(bp));
+    #if defined(DEBUG) || defined(DEBUG_JOIN_IN_LIST)
+        printf("[DEBUG][join-in-list] bp %p size %d, list [%d, %d]:\n", bp, GET_SIZE(bp), (1<<((list-heap_head)/WSIZE+3)), 1<<((list-heap_head)/WSIZE+4));
+        printf("[DEBUG][join-in-list] pre:\n");
+        show_list(list);
+    #endif
+    void *prev = NULL; 
+    void *curr = GET(list);
+    for (; curr; prev=curr, curr=NEXT(curr))
+    {
+        if (curr > bp) break;
+    }
+
     
-    // jumbo list
+    // case 1: list is empty
+    if ((!prev) && (!curr))
+    {
+        PUT(list, bp);
+        PUT(FDP(bp), 0);
+        PUT(BKP(bp), 0);
+    }
+
+    // case 2.1: insert at head
+    else if ((!prev) && (curr)){
+        PUT(list, bp);
+        PUT(BKP(bp), 0);
+        PUT(FDP(bp), curr);
+        PUT(BKP(curr), bp);
+        coalesce(bp);
+    }
+
+    // case 2.2: insert at mid
+    else if (prev && curr) {
+        PUT(FDP(prev), bp);
+        PUT(BKP(bp), prev);
+        PUT(FDP(bp), curr);
+        PUT(BKP(curr), bp);
+        coalesce(bp);
+    }
+
+    // case 2.3: insert at tail
     else {
-        void *prev = find_prev_by_size(size_blk);
-        if (!prev) {
-            #if defined(DEBUG) 
-                printf("DEBUG [mm_malloc][jumbo]: cannot find, extend and place now\n");
-            #endif
-            return extend_place_jumbo(size_blk);
-        }
-        #if defined(DEBUG) 
-            printf("DEBUG [mm_malloc][jumbo]: found a block, place now\n");
-        #endif
-        return place_curr(prev);}
+        PUT(FDP(prev), bp);
+        PUT(BKP(bp), prev);
+        PUT(FDP(bp), 0);
+        coalesce(bp);
+    }
+    #if defined(DEBUG) || defined(DEBUG_JOIN_IN_LIST)
+        printf("[DEBUG][join-in-list] post:\n");
+        show_list(list);
+    #endif
+
 }
 
-static void extend_list(void *head){
-    size_t list_size = GET_BLK_SIZE(head);
-    size_t block_num = MIN(BLOCK_NUM_LIMIT, CHUNKSIZE/list_size);
+void coalesce(void *bp){
+    void *prev = PREV(bp);
+    void *next = NEXT(bp);
+    size_t original_size = GET_SIZE(bp);
 
-    void *brk_init = mem_sbrk(block_num*list_size);
-    if (brk_init == -1) return NULL;
+    int flag_merge_prev = 0;
+    if ((prev) && ((prev + GET_SIZE(prev)) == bp))
+        flag_merge_prev = 1;
 
-    void *bp = brk_init;
-    PUT(head, bp);
+    int flag_merge_next = 0;
+    if ((next) && ((bp + GET_SIZE(bp)) == next))
+        flag_merge_next = 1;
 
-    for (int i=1; i<=block_num; i++){
-        PUT(HDRP(bp), list_size);
-        PUT(bp, bp+list_size);
-        bp = NEXT_BLKP(bp);}
+    // case 1: do not merge
+    if ((!flag_merge_prev) && (!flag_merge_next)) { return; }
 
-    PUT(bp-WSIZE, 0);     // this is EPILOGUE
-    PUT(bp-list_size, 0); // the last block's FD is NULL
-}
 
-static void *find_prev_by_size(size_t size){
-    void *prev=list_jumbo;
-    for (void *curr=NEXT_BLKP(prev); curr; prev=curr, curr=NEXT_BLKP(curr)){
-        if (GET_BLK_SIZE(curr) >= size) return prev;}
+    size_t overall_size;
+    // case 2: merge prev
+    if ((flag_merge_prev) && (!flag_merge_next))
+    {
+        overall_size = GET_SIZE(bp) + GET_SIZE(prev);
+        PUT(HDRP(prev), overall_size);
+        PUT(FDP(prev), next);
+        if (next) PUT(BKP(next), prev);
+        bp = prev;
+    }
+
+    // case 3: merge next
+    else if ((!flag_merge_prev) && (flag_merge_next)){
+        overall_size = GET_SIZE(bp) + GET_SIZE(next);
+        PUT(HDRP(bp), overall_size);
+        PUT(FDP(bp), NEXT(next));
+        if (NEXT(next)) PUT(BKP(NEXT(next)), bp);
+    }
+
+    // case 4: merge prev + next
+    else if (flag_merge_prev && flag_merge_next){
+        overall_size = GET_SIZE(prev) + GET_SIZE(bp) + GET_SIZE(next);
+        PUT(HDRP(prev), overall_size);
+        PUT(FDP(prev), NEXT(next));
+        if (NEXT(next)) PUT(BKP(NEXT(next)), prev);
+        bp = prev;
+    }
     
-    return NULL;
+    // case 2-4: check overall_size
+    void *original_list = get_list_by_size(original_size);
+    void *new_list = get_list_by_size(overall_size);
+    #if defined(DEBUG) || defined(DEBUG_COALESCE)
+        printf("[DEBUG][coalesce] block size %d -> %d\n", original_size, overall_size);
+    #endif
+
+
+    if (original_list == new_list){
+        return;
+    }
+    #if defined(DEBUG) || defined(DEBUG_COALESCE)
+        printf("[DEBUG][coalesce] detach and join in new list\n");
+    #endif
+    
+    bp = detach_block(bp);
+    PUT(FTRP(bp), new_list);
+    join_in_list(bp);
+
+
 }
 
-static void *extend_place_jumbo(size_t size){
-    void *bp = mem_sbrk(size);
-    if (bp == -1) return NULL;
+void *mm_malloc(size_t size){
+    size_t aligned_size = ALIGN_TO_FULLBLK(size);
+    #if defined(DEBUG) || defined(DEBUG_MM_MALLOC)
+        printf("[DEBUG][mm_malloc][align block size] %6d -> %6d\n", size, aligned_size);
+    #endif
 
-    PUT(HDRP(bp), size);
-    return bp;
-}
+    void *bp = get_free_block(aligned_size);
+    #if defined(DEBUG) || defined(DEBUG_MM_MALLOC)
+        if (bp == NULL)
+        {
+            printf("[DEBUG][mm_malloc][dispatch list] extend now\n");
+        }
+        else{
+            void *_tmp_list_head = GET(FTRP(bp));
+            size_t _tmp_list_size = 1 << ((_tmp_list_head-heap_head)/WSIZE+4);
 
-static void *place_curr(void *prev){
-    void *bp = NEXT_BLKP(prev);
-    PUT(prev, NEXT_BLKP(bp));
-    return bp;
+            printf("[DEBUG][mm_malloc][dispatch list] ready to place in %p (list [%d, %d] )\n", _tmp_list_head, _tmp_list_size>>1, _tmp_list_size);
+        }
+        
+    #endif
+    if (bp == NULL) bp = extend_heap(aligned_size);
+    if (bp == NULL) return NULL;
+    
+    return place(bp, aligned_size);
 }
 
 void mm_free(void *bp){
-    size_t size = GET_BLK_SIZE(bp);
-    void *head = list_map(size);
-
-    // normal list
-    if (head != list_jumbo) {
-        #if defined(DEBUG) 
-            printf("DEBUG [mm_free][normal]: freeing\n");
-        #endif
-        void *next = NEXT_BLKP(head);
-        PUT(head, bp);
-        PUT(bp, next);
-        return;
-    }
-
-    //jumbo list
-    #if defined(DEBUG) 
-        printf("DEBUG [mm_free][jumbo]: freeing\n");
+    void *list;
+    list = get_list_by_size(GET_SIZE(bp));
+    PUT(FTRP(bp), list);
+    #if defined(DEBUG) || defined(DEBUG_FREE)
+        printf("[DEBUG][mm-free] freeing block %p, size %d, joining now\n", bp, GET_SIZE(bp));
     #endif
-    void *prev = find_prev_by_addr(bp);
-    void *next = NEXT_BLKP(prev);
-    PUT(prev, bp);
-    PUT(bp, next);
-
-    coalesce(bp);
-    if (prev != list_jumbo) coalesce(prev);
-}
-
-static void *find_prev_by_addr(void *bp){
-    void *prev = list_jumbo;
-    for (void *curr=NEXT_BLKP(prev); curr; prev=curr, curr=NEXT_BLKP(curr))
-    {
-        if (curr > bp) return prev;
-    }
-    return prev;
-}
-
-static void coalesce(void *bp){
-    void *next = NEXT_BLKP(bp);
-    
-    if (!next) return;
-
-    size_t bp_size = GET_BLK_SIZE(bp);
-    size_t next_size = GET_BLK_SIZE(next);
-
-    if ( (bp+bp_size) != next) return;
-
-    PUT(bp, NEXT_BLKP(next));
-    PUT(HDRP(bp), bp_size+next_size);
+    join_in_list(bp);
 }
 
 void *mm_realloc(void *bp, size_t req_size){
-    if (bp == NULL) { return mm_malloc(req_size); }
-    if (req_size == 0) { mm_free(bp); }
+    size_t req_size_aligned = ALIGN_TO_FULLBLK(req_size);
+    size_t bp_size = GET_SIZE(bp);
 
-    size_t size = GET_BLK_SIZE(bp);
-    if ((req_size+4) <= size) return bp;
+    // case 1: request smaller size: do nothing
+    if (req_size_aligned <= bp_size) return bp;
 
+
+    // case 2: request bigger size
+    // case 2.1: bp is at heap tail
+    // case 2.2：can find a free block somewhere, detach it 
+    // case 2.3: alloc, memcpy, free
     void *oldbp = bp;
     void *newbp;
     size_t copySize;
 
-    copySize = size - WSIZE;
-    newbp = mm_malloc(req_size);
+    copySize = GET_SIZE(oldbp) - WSIZE;
+    newbp = mm_malloc(req_size_aligned);
     memcpy(newbp, oldbp, copySize);
     mm_free(oldbp);
     return newbp;
+}
+
+void show_list(void *head){
+    printf("--------------------------------------------\n");
+    void *bp = GET(FDP(head));
+    if (!bp){
+        printf("    empty\n");
+    }
+    else{
+        printf("                         size(hdrp)    fdp    bkp    ftrp\n");
+        while (bp){
+            printf("[%p]->[%p]: %6d \t %p \t %p \t %p\n", bp, bp+GET_SIZE(bp), GET_SIZE(bp), GET(FDP(bp)), GET(BKP(bp)), GET(FTRP(bp)));
+            bp = NEXT(bp);
+        }
+    }
+
+    printf("--------------------------------------------\n");
 }
