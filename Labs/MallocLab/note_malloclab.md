@@ -155,7 +155,7 @@ Perf index = 39 (util) + 40 (thru) = 79/100
 `0x35a38 - 0x2e010`
 
 ```
-clear; gcc -Wall -Og -m32 -DDEBUG -c -o mm.o mm.c; gcc -Wall -Og -m32 -DDEBUG -o mdriver mdriver.o mm.o memlib.o fsecs.o fcyc.o clock.o ftimer.o; ./mdriver -f ./traces/amptjp-bal.rep -V > anal.dump
+clear; gcc -Wall -Og -m32 -DDEBUG -c -o mm.o mm.c; gcc -Wall -Og -m32 -DDEBUG -o mdriver mdriver.o mm.o memlib.o fsecs.o fcyc.o clock.o ftimer.o; ./mdriver -f ./traces/realloc-bal.rep -V > anal.dump
 
 clear; gcc -Wall -O2 -m32 -c -o mm.o mm.c; gcc -Wall -O2 -m32 -o mdriver mdriver.o mm.o memlib.o fsecs.o fcyc.o clock.o ftimer.o; ./mdriver -V
 ```
