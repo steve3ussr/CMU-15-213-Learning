@@ -39,7 +39,6 @@ team_t team = {
  * Macros
  ********************************************************/
 // ALIGN
-#define ALIGN(size)         (size+4)
 #define ALIGNMENT 4 // single word (4) or double word (8) alignment
 #define ALIGN_TO_FULLBLK(size)      (((size+3) & (~0x7)) + DSIZE)
 
@@ -56,7 +55,12 @@ team_t team = {
 #define PUT(p, val)         (*(uint *)(p) = (uint)(val))
 #define HDRP(bp)            ((char *)(bp) - WSIZE)
 #define NEXT_BLKP(bp)       GET(bp)
-#define GET_BLK_SIZE(bp)    (GET(HDRP(bp)))
+#define GET_BLK_SIZE(bp)    (size_t)(GET(HDRP(bp)))
+
+#define FDP(bp)             (bp)
+#define FD(bp)              (GET(FDP(bp)))
+#define LAST_FTR            (mem_heap_hi()+1-2*WSIZE)
+
 
 
 /*********************************************************
@@ -70,9 +74,9 @@ void *list_jumbo;
 #define INIT_LIST(list, size)   do {PUT(list, 0); PUT(HDRP(list), size);} while (0)
 
 static void *list_map(size_t);
-static void extend_list(void *);
 static void *find_prev_by_size(size_t);
 static void *extend_place_jumbo(size_t);
+static void *extend_heap(size_t);
 static void *place_curr(void *);
 static void *find_prev_by_addr(void *);
 static void coalesce(void *);
@@ -82,22 +86,22 @@ static void coalesce(void *);
  */
 int mm_init(void){
     void *tmp;
-    if ((tmp = mem_sbrk((LIST_NUM+1)*DSIZE)) == (void *)-1)
+    if ((tmp = mem_sbrk((LIST_NUM+2)*DSIZE)) == (void *)-1)
         return -1;
 
-    PUT(tmp, 0);
-    list_8        = tmp+DSIZE*1 ; INIT_LIST(list_8,     8);
-    list_16       = tmp+DSIZE*2 ; INIT_LIST(list_16,    16);
-    list_32       = tmp+DSIZE*3 ; INIT_LIST(list_32,    32);
-    list_64       = tmp+DSIZE*4 ; INIT_LIST(list_64,    64);
-    list_128      = tmp+DSIZE*5 ; INIT_LIST(list_128,   128);
-    list_256      = tmp+DSIZE*6 ; INIT_LIST(list_256,   256);
-    list_512      = tmp+DSIZE*7 ; INIT_LIST(list_512,   512);
-    list_1024     = tmp+DSIZE*8 ; INIT_LIST(list_1024,  1024);
-    list_2048     = tmp+DSIZE*9 ; INIT_LIST(list_2048,  2048);
-    list_4096     = tmp+DSIZE*10; INIT_LIST(list_4096,  4096);
-    list_jumbo    = tmp+DSIZE*11; INIT_LIST(list_jumbo, 0);
-    PUT(tmp+DSIZE*11+WSIZE, 0);
+    list_8        = tmp+DSIZE*0 ; INIT_LIST(list_8,     8);
+    list_16       = tmp+DSIZE*1 ; INIT_LIST(list_16,    16);
+    list_32       = tmp+DSIZE*2 ; INIT_LIST(list_32,    32);
+    list_64       = tmp+DSIZE*3 ; INIT_LIST(list_64,    64);
+    list_128      = tmp+DSIZE*4 ; INIT_LIST(list_128,   128);
+    list_256      = tmp+DSIZE*5 ; INIT_LIST(list_256,   256);
+    list_512      = tmp+DSIZE*6 ; INIT_LIST(list_512,   512);
+    list_1024     = tmp+DSIZE*7 ; INIT_LIST(list_1024,  1024);
+    list_2048     = tmp+DSIZE*8 ; INIT_LIST(list_2048,  2048);
+    list_4096     = tmp+DSIZE*9; INIT_LIST(list_4096,  4096);
+    list_jumbo    = tmp+DSIZE*10; INIT_LIST(list_jumbo, 0);
+    PUT(tmp+DSIZE*11, 1);
+    PUT(tmp+DSIZE*10+WSIZE, 1);
 
     #if defined(DEBUG) 
         printf("\nDEBUG [mm_init]: finished. \n");
@@ -114,6 +118,15 @@ int mm_init(void){
         printf("DEBUG [mm_init][jumbo\t]: %p\n", list_jumbo);
     #endif
     return 0;
+}
+
+static void *extend_heap(size_t aligned_size) {
+    // bp=sbrk, fill HDR FTR
+    void * bp;
+    if ((bp = mem_sbrk(aligned_size)) == (void *)-1)
+        return NULL;
+    PUT(HDRP(bp), aligned_size);
+    return bp;
 }
 
 static void *list_map(size_t size){
@@ -135,79 +148,38 @@ static void *list_map(size_t size){
 void *mm_malloc(size_t size){
     // align 4->8, 12->16
     size_t size_blk = ALIGN_TO_FULLBLK(size);
-
     void *head = list_map(size_blk);
 
     // normal list
     if (head != list_jumbo) {
-        #if defined(DEBUG) 
-            printf("DEBUG [mm_malloc][normal-list]\n");
-        #endif
-        if (!NEXT_BLKP(head)) {
-            #if defined(DEBUG) 
-                printf("DEBUG [mm_malloc][normal-list]: list empty, extend now\n");
-            #endif
-            extend_list(head);
+        if (!FD(head)) {
+            return extend_heap(GET_BLK_SIZE(head));
         }
-
-        #if defined(DEBUG) 
-            printf("DEBUG [mm_malloc][normal-list]: place first block in list\n");
-        #endif
-        return place_curr(head);}
+        return place_curr(head);
+    }
     
     // jumbo list
     else {
         void *prev = find_prev_by_size(size_blk);
         if (!prev) {
-            #if defined(DEBUG) 
-                printf("DEBUG [mm_malloc][jumbo]: cannot find, extend and place now\n");
-            #endif
-            return extend_place_jumbo(size_blk);
+            return extend_heap(size_blk);
         }
-        #if defined(DEBUG) 
-            printf("DEBUG [mm_malloc][jumbo]: found a block, place now\n");
-        #endif
         return place_curr(prev);}
-}
-
-static void extend_list(void *head){
-    size_t list_size = GET_BLK_SIZE(head);
-    size_t block_num = MIN(BLOCK_NUM_LIMIT, CHUNKSIZE/list_size);
-
-    void *brk_init = mem_sbrk(block_num*list_size);
-    if (brk_init == -1) return NULL;
-
-    void *bp = brk_init;
-    PUT(head, bp);
-
-    for (int i=1; i<=block_num; i++){
-        PUT(HDRP(bp), list_size);
-        PUT(bp, bp+list_size);
-        bp = NEXT_BLKP(bp);}
-
-    PUT(bp-WSIZE, 0);     // this is EPILOGUE
-    PUT(bp-list_size, 0); // the last block's FD is NULL
 }
 
 static void *find_prev_by_size(size_t size){
     void *prev=list_jumbo;
-    for (void *curr=NEXT_BLKP(prev); curr; prev=curr, curr=NEXT_BLKP(curr)){
-        if (GET_BLK_SIZE(curr) >= size) return prev;}
+    for (void *curr=FD(prev); curr; prev=curr, curr=FD(curr))
+    {
+        if (GET_BLK_SIZE(curr) >= size) return prev;
+    }
     
     return NULL;
 }
 
-static void *extend_place_jumbo(size_t size){
-    void *bp = mem_sbrk(size);
-    if (bp == -1) return NULL;
-
-    PUT(HDRP(bp), size);
-    return bp;
-}
-
 static void *place_curr(void *prev){
-    void *bp = NEXT_BLKP(prev);
-    PUT(prev, NEXT_BLKP(bp));
+    void *bp = FD(prev);
+    PUT(FDP(prev), FD(bp));
     return bp;
 }
 
@@ -217,12 +189,9 @@ void mm_free(void *bp){
 
     // normal list
     if (head != list_jumbo) {
-        #if defined(DEBUG) 
-            printf("DEBUG [mm_free][normal]: freeing\n");
-        #endif
-        void *next = NEXT_BLKP(head);
-        PUT(head, bp);
-        PUT(bp, next);
+        void *next = FD(head);
+        PUT(FDP(head), bp);
+        PUT(FDP(bp), next);
         return;
     }
 
@@ -231,9 +200,9 @@ void mm_free(void *bp){
         printf("DEBUG [mm_free][jumbo]: freeing\n");
     #endif
     void *prev = find_prev_by_addr(bp);
-    void *next = NEXT_BLKP(prev);
-    PUT(prev, bp);
-    PUT(bp, next);
+    void *next = FD(prev);
+    PUT(FDP(prev), bp);
+    PUT(FDP(bp), next);
 
     coalesce(bp);
     if (prev != list_jumbo) coalesce(prev);
@@ -241,7 +210,7 @@ void mm_free(void *bp){
 
 static void *find_prev_by_addr(void *bp){
     void *prev = list_jumbo;
-    for (void *curr=NEXT_BLKP(prev); curr; prev=curr, curr=NEXT_BLKP(curr))
+    for (void *curr=FD(prev); curr; prev=curr, curr=FD(curr))
     {
         if (curr > bp) return prev;
     }
@@ -249,7 +218,7 @@ static void *find_prev_by_addr(void *bp){
 }
 
 static void coalesce(void *bp){
-    void *next = NEXT_BLKP(bp);
+    void *next = FD(bp);
     
     if (!next) return;
 
@@ -258,22 +227,25 @@ static void coalesce(void *bp){
 
     if ( (bp+bp_size) != next) return;
 
-    PUT(bp, NEXT_BLKP(next));
+    PUT(bp, FD(next));
     PUT(HDRP(bp), bp_size+next_size);
+    // printf("triggered. \n");
 }
 
 void *mm_realloc(void *bp, size_t req_size){
     if (bp == NULL) { return mm_malloc(req_size); }
     if (req_size == 0) { mm_free(bp); }
 
-    size_t size = GET_BLK_SIZE(bp);
-    if ((req_size+4) <= size) return bp;
+    size_t bp_size = GET_BLK_SIZE(bp);
+    size_t req_size_aligned = ALIGN_TO_FULLBLK(req_size);
+    if (req_size_aligned <= bp_size) return bp;
+
 
     void *oldbp = bp;
     void *newbp;
     size_t copySize;
 
-    copySize = size - WSIZE;
+    copySize = bp_size - WSIZE;
     newbp = mm_malloc(req_size);
     memcpy(newbp, oldbp, copySize);
     mm_free(oldbp);

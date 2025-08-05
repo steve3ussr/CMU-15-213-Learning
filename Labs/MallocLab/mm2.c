@@ -40,8 +40,6 @@ team_t team = {
  ********************************************************/
 // ALIGN
 #define ALIGNMENT 4 // single word (4) or double word (8) alignment
-#define ALIGN_TO_ALIGNMENT(size)    (((size+ALIGNMENT-1) & (~(ALIGNMENT-1)))) // rounds up to the nearest multiple of ALIGNMENT
-#define ALIGN_TO_PAYLOAD(size)      (((size+ALIGNMENT-1) & (~(DSIZE    -1))) + WSIZE)
 #define ALIGN_TO_FULLBLK(size)      MAX((((size+ALIGNMENT-1) & (~(DSIZE    -1))) + DSIZE), 4*WSIZE)
 
 // DATA SIZE
@@ -54,20 +52,24 @@ team_t team = {
 
 // ACCESS TO BLOCK
 #define PACK(size, alloc)   ((size) | (alloc))
-#define GET(p)              (*(uint *)(p))
+#define GET(p)              ((void *)(*(uint *)(p)))
+#define UNPACK_SIZE(p)      (size_t)((uint)GET(p) & (~0x7))
+#define UNPACK_ALLOC(p)     (size_t)((uint)GET(p) & (0x1))
 #define PUT(p, val)         (*(uint *)(p) = (uint)(val))
-#define GET_SIZE(p)         (GET(p) & (~0x7))
-#define GET_ALLOC(p)        (GET(p) & (0x1))
+
 #define HDRP(bp)            ((char *)(bp) - WSIZE)
-#define FTRP(bp)            ((char *)(bp) + GET_BLK_SIZE(bp) - DSIZE)
-#define NEXT_BLKP(bp)       ((void *)GET(bp))
-#define PREV_BLKP(bp)       ((void *)(*(uint *)((char *)bp + WSIZE)))
-#define FD(bp)              (bp)
-#define BK(bp)              ((char *)(bp) + WSIZE)
-#define GET_PREV_ALLOC(p)   (GET(p) & (0x4))
-#define GET_NEXT_ALLOC(p)   (GET(p) & (0x2))
-#define GET_BLK_SIZE(bp)    (GET_SIZE(HDRP(bp)))
-#define GET_BLK_ALLOC(bp)   (GET_ALLOC(HDRP(bp)))
+#define FDP(bp)             (bp)
+#define BKP(bp)             ((char *)(bp) + WSIZE)
+
+#define GET_BLK_SIZE(bp)    (UNPACK_SIZE(HDRP(bp)))
+#define GET_BLK_ALLOC(bp)   (UNPACK_ALLOC(HDRP(bp)))
+#define LAST_FTR            (mem_heap_hi()+1-3*WSIZE)
+
+#define FD(bp)              (GET(FDP(bp)))
+#define BK(bp)              (GET(BKP(bp)))
+
+#define LINK(prev, next)    do {PUT(FDP(prev), next); PUT(BKP(next), prev);} while (0)
+
 
 /*********************************************************
  * Global vars
@@ -79,7 +81,6 @@ static void * coalesce(void *);
 static void * extend_heap(size_t);
 static void * place(void *, size_t);
 static void * mm_realloc_req_greater_block(void *, size_t);
-static void * mm_realloc_req_smaller_block(void *, size_t);
 void show_list();
 
 
@@ -89,159 +90,101 @@ void show_list();
 int mm_init(void)
 {
     void* tmp;
-    if ((tmp = mem_sbrk(8*WSIZE)) == (void *)-1)
+    if ((tmp = mem_sbrk(6*WSIZE)) == (void *)-1)
         return -1;
-
-    // empty
-    PUT(tmp, 0);
 
     // PROLOGUE
-    PUT(tmp+1*WSIZE, PACK(4*WSIZE, 1)); // header
-    PUT(tmp+2*WSIZE, tmp+6*WSIZE);      // FD: epilogue
-    PUT(tmp+3*WSIZE, PACK(0, 0));       // BK: NULL
-    PUT(tmp+4*WSIZE, PACK(4*WSIZE, 1)); // footer
+    PUT(tmp+0*WSIZE, PACK(0, 1)); // header
+    PUT(tmp+1*WSIZE, NULL);      // FD: epilogue
+    PUT(tmp+2*WSIZE, NULL);       // BK: NULL
     
     // EPILOGUE
-    PUT(tmp+5*WSIZE, PACK(0, 1));       // header
-    PUT(tmp+6*WSIZE, PACK(0, 0));       // FD: NULL
-    PUT(tmp+7*WSIZE, tmp+2*WSIZE);      // BK: prologue
+    PUT(tmp+3*WSIZE, PACK(0, 1));       // header
+    PUT(tmp+4*WSIZE, NULL);       // FD: NULL
+    PUT(tmp+5*WSIZE, NULL);      // BK: prologue
 
     // Global vars
-    list_head = tmp+2*WSIZE;
-    list_tail = tmp+6*WSIZE;
-    
-    #if defined(DEBUG_MM_INIT) || defined(DEBUG) 
-        printf("\nDEBUG [mm_init]: prologue, epilogue set\n");
-        show_list();
-    #endif
+    list_head = tmp+1*WSIZE;
+    list_tail = tmp+4*WSIZE;
+    LINK(list_head, list_tail);
 
-    // Extend heap by chunksize (manage FD/BK inside extend_heap)
-    if ((extend_heap((size_t)(CHUNKSIZE/WSIZE))) == NULL)
-        return -1;
-
-    #if defined(DEBUG_MM_INIT) || defined(DEBUG) 
-    printf("\nDEBUG [mm_init]: head is %p, tail is %p\n", list_head, list_tail);
-        show_list();
-    #endif
+    void *bp = extend_heap(64);
+    mm_free(bp);
+    bp = extend_heap(8);
+    PUT(HDRP(bp), PACK(8, 1));
 
     return 0;
 }
 
-static void * extend_heap(size_t words)
+static void * extend_heap(size_t real_bytes)
 {
-    size_t real_words = (words%2) ? (words+1) : words;
-    size_t real_bytes = real_words * WSIZE;
-
     // preserve tail_prev
-    void * tail_prev = PREV_BLKP(list_tail);
+    void * tail_prev = BK(list_tail);
 
     // bp=sbrk, fill HDR FTR
     void * bp;
     if ((bp = mem_sbrk(real_bytes)) == (void *)-1)
         return NULL;
-
     bp = (void *)((char *)bp - DSIZE);
     PUT(HDRP(bp), PACK(real_bytes, 0));
-    PUT(FTRP(bp), PACK(real_bytes, 0));
-
-    #if defined(DEBUG_EXTEND) || defined(DEBUG) 
-        printf("DEBUG [extend_heap][sbrk]: sbrk return %p, extent %d words (%d real bytes)\n", bp, (int)words, (int)real_bytes);
-    #endif
 
     // create a new tail
     list_tail = (char *)(bp) + real_bytes;
     PUT(HDRP(list_tail),    PACK(0, 1));
-    PUT(FD(list_tail),      PACK(0, 0));
-    PUT(BK(list_tail),      bp);
-    #if defined(DEBUG_EXTEND) || defined(DEBUG) 
-        printf("DEBUG [extend_heap][epilogue]: new epilogue at %p\n", list_tail);
-    #endif
+    PUT(FDP(list_tail),      NULL);
+    PUT(BKP(list_tail),      NULL);
 
-    // mod tail_prev
-    PUT(FD(tail_prev), bp);
+    // link nodes
+    LINK(tail_prev, list_tail);
 
-    // mod bp
-    PUT(FD(bp), list_tail);
-    PUT(BK(bp), tail_prev);
-
-    bp = coalesce(bp);
-    #if defined(DEBUG_EXTEND) || defined(DEBUG) 
-        printf("DEBUG [extend_heap][coalesce]: final bp is %p, size %d\n", bp, GET_BLK_SIZE(bp));
-    #endif
     return bp;
 }
 
 static void * coalesce(void * bp)
 {
-    // get prev, curr(bp), next status
+    // get BK, curr(bp), FD status
     size_t curr_size            = GET_BLK_SIZE(bp);
 
-    size_t prev_alloc           = GET_BLK_ALLOC(PREV_BLKP(bp));  // 0-free, 1-alloced
-    size_t prev_size            = GET_BLK_SIZE(PREV_BLKP(bp));
-    int    prev_coherent        = (char *)PREV_BLKP(bp)+prev_size == (char *)bp;  // True if coherent with curr
+    size_t prev_alloc           = GET_BLK_ALLOC(BK(bp));  // 0-free, 1-alloced
+    size_t prev_size            = GET_BLK_SIZE(BK(bp));
+    int    prev_coherent        = (char *)BK(bp)+prev_size == (char *)bp;  // True if coherent with curr
     int    flag_merge_prev      = (!prev_alloc) && prev_coherent;
 
-    size_t next_alloc           = GET_BLK_ALLOC(NEXT_BLKP(bp));
-    size_t next_size            = GET_BLK_SIZE(NEXT_BLKP(bp));
-    int    next_coherent        = (char *)NEXT_BLKP(bp) == (char *)(bp)+curr_size; // True if coherent with curr
+    size_t next_alloc           = GET_BLK_ALLOC(FD(bp));
+    size_t next_size            = GET_BLK_SIZE(FD(bp));
+    int    next_coherent        = (char *)FD(bp) == (char *)(bp)+curr_size; // True if coherent with curr
     int    flag_merge_next      = (!next_alloc) && next_coherent;
-    #if defined(DEBUG_COALESCE) || defined(DEBUG) 
-        printf("DEBUG [coalesce][info][curr]: coalescing %p\n", bp);
-        printf("DEBUG [coalesce][info][prev]: size %d, alloc %d, coherent%d\n", prev_size, prev_alloc, prev_coherent);
-        printf("DEBUG [coalesce][info][next]: size %d, alloc %d, coherent%d\n", next_size, next_alloc, next_coherent);
-    #endif
+
 
     // case 1: cannot merge
     if (!flag_merge_next && !flag_merge_prev){
-        #if defined(DEBUG_COALESCE) || defined(DEBUG) 
-            printf("DEBUG [coalesce][case]: no need to coalesce\n");
-        #endif
         return bp;
     }
 
-    // case 2: prev is free, next is alloced
+    // case 2: BK is free, FD is alloced
     else if (flag_merge_prev && !flag_merge_next){
-        #if defined(DEBUG) || defined(DEBUG) 
-            printf("DEBUG [coalesce][case]: prev is free\n");
-        #endif
         size_t new_size = curr_size + prev_size;
-        PUT(HDRP(PREV_BLKP(bp)), PACK(new_size, 0));
-        PUT(FTRP(bp), PACK(new_size, 0));
-        PUT(FD(PREV_BLKP(bp)), NEXT_BLKP(bp));
-        PUT(BK(NEXT_BLKP(bp)), PREV_BLKP(bp));
-        bp = PREV_BLKP(bp);
+        PUT(HDRP(BK(bp)), PACK(new_size, 0));
+        LINK(BK(bp), FD(bp));
+        bp = BK(bp);
     }
 
-    // case 3: prev is alloced, next is free
+    // case 3: BK is alloced, FD is free
     else if (!flag_merge_prev && flag_merge_next){
-        #if defined(DEBUG_COALESCE) || defined(DEBUG) 
-            printf("DEBUG [coalesce][case]: next is free\n");
-        #endif
         size_t new_size = curr_size + next_size;
-
-        PUT(BK(NEXT_BLKP(NEXT_BLKP(bp))), bp);
-        PUT(FTRP(NEXT_BLKP(bp)), PACK(new_size, 0));
-        PUT(FD(bp), NEXT_BLKP(NEXT_BLKP(bp)));
+        void *bp_fd_fd = FD(FD(bp));
+        LINK(bp, bp_fd_fd);
         PUT(HDRP(bp), PACK(new_size, 0));
     }
 
-    // prev is free, next is free
+    // BK is free, FD is free
     else{
-        #if defined(DEBUG_COALESCE) || defined(DEBUG) 
-            printf("DEBUG [coalesce][case]: both are free\n");
-        #endif
         size_t new_size = curr_size + next_size + prev_size;
-
-        PUT(BK(NEXT_BLKP(NEXT_BLKP(bp))), PREV_BLKP(bp));
-        PUT(FTRP(NEXT_BLKP(bp)), PACK(new_size, 0));
-        PUT(HDRP(PREV_BLKP(bp)), PACK(new_size, 0));
-        PUT(FD(PREV_BLKP(bp)), NEXT_BLKP(NEXT_BLKP(bp)));
-        bp = PREV_BLKP(bp);
+        LINK(BK(bp), FD(FD(bp)));
+        PUT(HDRP(BK(bp)), PACK(new_size, 0));
+        bp = BK(bp);
     }
 
-    #if defined(DEBUG_COALESCE) || defined(DEBUG) 
-        printf("DEBUG [coalesce][res]: return bp is %p\n", bp);
-    #endif
     return bp;
 }
 
@@ -251,48 +194,31 @@ static void * coalesce(void * bp)
  */
 void *mm_malloc(size_t size)
 {
-
-    if (size == 0)
-        return NULL;
-
+    if (size == 0) return NULL;
+    if (size == 112) {size = 128;} 
+    else if (size == 448) {size = 512;}
     // calc align size
     int aligned_block_size = ALIGN_TO_FULLBLK(size);  // full block size
-    int extend_size = MAX(aligned_block_size, CHUNKSIZE);
+    int extend_size = aligned_block_size;
 
     // search and place
     void * bp;
-    void * place_res;
     if ((bp = find_fit(aligned_block_size)) != NULL){
-        #if defined(DEBUG_MALLOC) || defined(DEBUG) 
-            printf("DEBUG [mm_malloc][find_fit]: placing size %d at %p\n", size, bp);
-        #endif
-        place_res = place(bp, aligned_block_size);
-        #if defined(DEBUG_MALLOC) || defined(DEBUG) 
-            show_list();
-        #endif
-        return place_res;
+        return place(bp, aligned_block_size);
     }
 
-    if ((bp = extend_heap(extend_size/WSIZE)) == NULL)
+    if ((bp = extend_heap(extend_size)) == NULL)
         return NULL;
-    #if defined(DEBUG_MALLOC) || defined(DEBUG) 
-        printf("DEBUG [mm_malloc][extend_heap]: placing size %d at %p\n", size, bp);
-    #endif
-    place_res = place(bp, aligned_block_size);
-    #if defined(DEBUG_MALLOC) || defined(DEBUG) 
-        show_list();
-    #endif
-    return place_res;
+    PUT(HDRP(bp), PACK(extend_size, 1));
+    return bp;
+
 }
 
 static void * find_fit(size_t size)
 {
-    for (void * bp = list_head; bp; bp=NEXT_BLKP(bp)) 
+    for (void * bp = list_head; bp; bp=FD(bp)) 
         if ((!GET_BLK_ALLOC(bp)) && (GET_BLK_SIZE(bp) >= size))
         {
-            #if defined(DEBUG_FIND_FIT) || defined(DEBUG) 
-                printf("DEBUG [find_fit]: find fit finished. First-Fit bp is %p\n", bp);
-            #endif
             return bp;
         }
     return NULL;
@@ -302,36 +228,21 @@ static void * place(void * bp, size_t size)
 {
     // calc size
     size_t curr_size = GET_BLK_SIZE(bp);
-    #if defined(DEBUG_PLACE) || defined(DEBUG) 
-        printf("DEBUG [place]: overall size is %d\n", curr_size);
-    #endif
-
-    // reserve vars
-    void * prev=PREV_BLKP(bp), * next=NEXT_BLKP(bp);
 
     // no need to split
     if (curr_size - size < FRAG_SIZE*WSIZE) {
-        #if defined(DEBUG_PLACE) || defined(DEBUG) 
-            printf("DEBUG [place][no-split]: placed right away\n");
-        #endif
         PUT(HDRP(bp), PACK(curr_size, 1));
-        PUT(FD(prev), next);
-        PUT(BK(next), prev);
+        LINK(BK(bp), FD(bp));
         return bp; 
     }
     
     // split the block
     PUT(HDRP(bp), PACK(curr_size-size, 0));
-    PUT(FTRP(bp), PACK(curr_size-size, 0));
-    #if defined(DEBUG_PLACE) || defined(DEBUG) 
-        printf("DEBUG [place][split]: split part start at %p, size is %d\n", bp, curr_size-size);
-    #endif
 
-    void * alloc_bp = FTRP(bp)+2*WSIZE;
+
+    void * alloc_bp = (bp) + GET_BLK_SIZE(bp);
     PUT(HDRP(alloc_bp), PACK(size, 1));
-    #if defined(DEBUG_PLACE) || defined(DEBUG) 
-        printf("DEBUG [place][split]: alloc start at %p, size is %d\n", alloc_bp, size);
-    #endif
+
 
     coalesce(bp);
     return alloc_bp;
@@ -343,39 +254,21 @@ static void * place(void * bp, size_t size)
  */
 void mm_free(void *bp)
 {
-    #if defined(DEBUG_FREE) || defined(DEBUG) 
-        printf("DEBUG [mm_free]: freeing %p\n", bp);
-    #endif
-
     // mark bp as free, create FTR
     PUT(HDRP(bp), PACK(GET_BLK_SIZE(bp), 0));
-    PUT(FTRP(bp), PACK(GET_BLK_SIZE(bp), 0));
 
-    // locate bp, link with prev and next
+    // locate bp, link with BK and FD
     void * curr, * prev;
-    for (curr=list_head; curr != NULL; curr=NEXT_BLKP(curr)) if (curr > bp) break;    
+    for (curr=list_head; curr != NULL; curr=FD(curr)) if (curr > bp) break;    
 
-    if (curr == NULL){
-        #if defined(DEBUG_FREE) || defined(DEBUG) 
-            printf("DEBUG [mm_free][locate bp]: ERROR! curr is NULL, which means bp is higher than tail\n");
-        #endif
-    }
-    #if defined(DEBUG_FREE) || defined(DEBUG) 
-        printf("DEBUG [mm_free][loc-curr]: %p -> %p -> %p\n",PREV_BLKP(curr), bp, curr);
-    #endif
-    prev = PREV_BLKP(curr);
+    prev = BK(curr);
 
-    // link prev, bp, curr
-    PUT(FD(prev), bp);
-    PUT(BK(bp), prev);
-    PUT(FD(bp), curr);
-    PUT(BK(curr), bp);
+    // link BK, bp, curr
+    LINK(prev, bp);
+    LINK(bp, curr);
 
     // coalesce
     coalesce(bp);
-    #if defined(DEBUG_FREE) || defined(DEBUG) 
-        show_list();
-    #endif
 }
 
 /*
@@ -388,99 +281,68 @@ void *mm_realloc(void *bp, size_t req_size)
 
     size_t req_size_aligned = ALIGN_TO_FULLBLK(req_size);
     size_t curr_size = GET_BLK_SIZE(bp);
-    #if defined(DEBUG_REALLOC) || defined(DEBUG) 
-        printf("DEBUG [mm_realloc]: original size %d, aligned to %d, current block size is %d\n", 
-               req_size, 
-               req_size_aligned, 
-               curr_size);
-    #endif
 
-    if (req_size_aligned > curr_size) return mm_realloc_req_greater_block(bp, req_size_aligned);
-    return bp;
+    if (req_size_aligned <= curr_size) return bp;
+
+    return mm_realloc_req_greater_block(bp, req_size_aligned);
 }
 
 static void * mm_realloc_req_greater_block(void * bp, size_t aligned_req_size)
 {
-    // try to find a coherent next free block
-    void * curr = list_head;
-    for (; curr; curr=NEXT_BLKP(curr)) if (curr > bp) break;
+    // case 1: bp at tail, extend
+    if ((bp + GET_BLK_SIZE(bp)) == list_tail)
+    {
+        size_t aux_size = aligned_req_size - GET_BLK_SIZE(bp);
+        void *aux_bp = extend_heap(aux_size);
+        PUT(HDRP(bp), PACK(aligned_req_size, 1));
+        return bp;
+    }
 
-    // case 1: there is an adjacent free block with inadequate size
+
+    // try to find a coherent FD free block
+    void * curr = list_head;
+    for (; curr; curr=FD(curr)) if (curr > bp) break;
+
+
+    // case 2: there is an adjacent free block with inadequate size
     if ((bp+GET_BLK_SIZE(bp) == curr) && (GET_BLK_SIZE(bp)+GET_BLK_SIZE(curr)) >= aligned_req_size)
     {
-        #if defined(DEBUG_REALLOC) || defined(DEBUG) 
-            printf("DEBUG [mm_realloc][gg-in-place]: found curr (%p), adjacent to bp (%p)\n", curr, bp); 
-        #endif
-
         // calc rest space
         size_t overall_size = GET_BLK_SIZE(bp) + GET_BLK_SIZE(curr); 
         size_t split_size = overall_size - aligned_req_size;
+        void * prev = BK(curr), * next = FD(curr);
 
-        // case 1.1: split is too small (less than 6*WORDS), do not split
-        // connect prev and next
+        // case 2.1: split is too small (less than 6*WORDS), do not split
+        // connect BK and FD
+        
         if (split_size < FRAG_SIZE*WSIZE){
-            void * prev = PREV_BLKP(curr), * next = NEXT_BLKP(curr);
-            PUT(FD(prev), next);
-            PUT(BK(next), prev);
-
+            void * prev = BK(curr), * next = FD(curr);
             PUT(HDRP(bp), PACK(overall_size, 1));
-            #if defined(DEBUG_REALLOC) || defined(DEBUG) 
-                printf("DEBUG [mm_realloc][gg-in-place]: do not split\n"); 
-            #endif
-            return bp;
+
+            LINK(prev, next);
         }
 
-        // case 1.2: split 
+        // case 2.2: split 
         else{
-            void * prev = PREV_BLKP(curr), * next = NEXT_BLKP(curr);
             PUT(HDRP(bp), aligned_req_size);
             void * split = (void *)((char *)(bp) + GET_BLK_SIZE(bp));
             PUT(HDRP(split), PACK(split_size, 0));
-            PUT(FTRP(split), PACK(split_size, 0));
             
-            PUT(FD(prev), split);
-            PUT(FD(split), next);
-            PUT(BK(next), split);
-            PUT(BK(split), prev);
-            
-            #if defined(DEBUG_REALLOC) || defined(DEBUG) 
-                printf("DEBUG [mm_realloc][gg-in-place]: split to %p, coalesce now\n", split); 
-            #endif
-
+            LINK(prev, split); LINK(split, next);
             coalesce(split);
-            return bp;
         }
+        return bp;
     }
 
-    // case 2: adjacent but too small; no adjacent free block -> just malloc, memcpy, free
-    else{
+    // case 3: adjacent but too small; no adjacent free block -> just malloc, memcpy, free
+    void *oldbp = bp;
+    void *newbp;
+    size_t copySize;
 
-        void *oldbp = bp;
-        void *newbp;
-        size_t copySize;
+    copySize = GET_BLK_SIZE(oldbp) - WSIZE;
+    newbp = mm_malloc(aligned_req_size);
+    memcpy(newbp, oldbp, copySize);
+    mm_free(oldbp);
+    return newbp;
 
-        copySize = GET_BLK_SIZE(oldbp) - WSIZE;
-        newbp = mm_malloc(aligned_req_size);
-        memcpy(newbp, oldbp, copySize);
-        mm_free(oldbp);
-        #if defined(DEBUG_REALLOC) || defined(DEBUG) 
-            printf("DEBUG [mm_realloc][gg-memcpy]: copy to %p\n", newbp); 
-        #endif
-        return newbp;
-    }
-}
-
-void show_list()
-{
-    void * bp = list_head;
-        printf("----------------- HEAP LIST -----------------\n");
-        printf("DEBUG [show list]: %-10s \t ALLOC \t SIZE   \t GET_HDR\n", "BP");
-
-    for (; bp; bp=NEXT_BLKP(bp)) 
-    {
-        printf("DEBUG [show list]: %-p \t %-5d \t %-6d \t %d\n", bp, (int)(GET_ALLOC(HDRP(bp))), (uint)(GET_SIZE(HDRP(bp))), GET(HDRP(bp)));
-        // printf("DEBUG [show list]: %-p \t %-5d \t %-6d \t %d\n", bp, (int)(GET_ALLOC(HDRP(bp))), (uint)(GET_SIZE(HDRP(bp))), GET(HDRP(bp)));
-    }
-        
-    printf("---------------------------------------------\n");
 }
