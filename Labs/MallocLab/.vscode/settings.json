@@ -4,6 +4,8 @@
         "*.catvbs": "vbs",
         "memlib.h": "c",
         "config.h": "c",
-        "mm.h": "c"
+        "mm.h": "c",
+        "math.h": "c",
+        "stdio.h": "c"
     }
 }
